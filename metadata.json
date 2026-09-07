@@ -1,0 +1,6 @@
+{
+  "name": "DearYou",
+  "description": "An interactive digital birthday experience creator. Craft personalized, cinematic birthday journeys with memories, games, secrets, AI message generation, and contributor wishes.",
+  "requestFramePermissions": ["microphone"],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
