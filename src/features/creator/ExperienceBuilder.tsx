@@ -2258,60 +2258,103 @@ const ModuleFormInspector: React.FC<{
             </div>
 
             <div className="space-y-4">
-              {wishes.map((w: any, idx: number) => (
-                <div key={w.id || idx} className="p-4 rounded-2xl bg-stone-50 border border-stone-200 space-y-3 relative group">
-                  <div className="flex items-center justify-between">
-                    <span className="text-xs font-bold text-stone-800">
-                      {w.name || 'Friend'} ({w.relationship || 'Wish'})
-                    </span>
-                    <button
-                      type="button"
-                      onClick={() => removeWish(idx)}
-                      className="text-stone-400 hover:text-rose-600 p-1 cursor-pointer"
-                      title="Remove Wish"
-                    >
-                      <Trash2 className="w-3.5 h-3.5" />
-                    </button>
-                  </div>
+              {wishes.map((w: any, idx: number) => {
+                const rawUrl = w.mediaUrl || w.media?.url || (typeof w.media === 'string' ? w.media : null);
+                const mediaUrl = rawUrl ? getMediaUrl(rawUrl) : null;
+                const isVideo = w.type === 'video' || (Boolean(mediaUrl) && /\.(mp4|webm|mov|mkv)(\?.*)?$/i.test(mediaUrl));
 
-                  <div className="grid grid-cols-2 gap-3">
-                    <div>
-                      <label className="text-[11px] font-semibold text-stone-600">Sender Name</label>
-                      <input
-                        type="text"
-                        value={w.name || ''}
-                        placeholder="e.g. Maya"
-                        onChange={(e) => updateWish(idx, { name: e.target.value })}
-                        className="w-full mt-1 px-3 py-1.5 rounded-lg border border-stone-300 text-xs bg-white text-stone-800"
-                      />
-                    </div>
-                    <div>
-                      <label className="text-[11px] font-semibold text-stone-600">Relationship</label>
-                      <input
-                        type="text"
-                        value={w.relationship || ''}
-                        placeholder="e.g. College Bestie"
-                        onChange={(e) => updateWish(idx, { relationship: e.target.value })}
-                        className="w-full mt-1 px-3 py-1.5 rounded-lg border border-stone-300 text-xs bg-white text-stone-800"
-                      />
-                    </div>
-                  </div>
-
-                  <div>
+                return (
+                  <div key={w.id || idx} className="p-4 rounded-2xl bg-stone-50 border border-stone-200 space-y-3 relative group">
                     <div className="flex items-center justify-between">
-                      <label className="text-[11px] font-semibold text-stone-600">Heartfelt Message</label>
-                      <TranslateButton value={w.message || ''} onTranslated={(t) => updateWish(idx, { message: t })} />
+                      <span className="text-xs font-bold text-stone-800 flex items-center gap-1.5">
+                        <span>{w.name || 'Friend'} ({w.relationship || 'Wish'})</span>
+                        {w.contributionId && (
+                          <span className="text-[10px] bg-emerald-100 text-emerald-800 px-1.5 py-0.5 rounded-full font-medium">
+                            Contributor Wish
+                          </span>
+                        )}
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => removeWish(idx)}
+                        className="text-stone-400 hover:text-rose-600 p-1 cursor-pointer"
+                        title="Remove Wish"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </button>
                     </div>
-                    <textarea
-                      rows={3}
-                      value={w.message || ''}
-                      placeholder="e.g. Happy Birthday sunshine! Never change your goofy energy..."
-                      onChange={(e) => updateWish(idx, { message: e.target.value })}
-                      className="w-full mt-1 p-2 rounded-lg border border-stone-300 text-xs bg-white text-stone-800"
-                    />
+
+                    <div className="grid grid-cols-2 gap-3">
+                      <div>
+                        <label className="text-[11px] font-semibold text-stone-600">Sender Name</label>
+                        <input
+                          type="text"
+                          value={w.name || ''}
+                          placeholder="e.g. Maya"
+                          onChange={(e) => updateWish(idx, { name: e.target.value })}
+                          className="w-full mt-1 px-3 py-1.5 rounded-lg border border-stone-300 text-xs bg-white text-stone-800"
+                        />
+                      </div>
+                      <div>
+                        <label className="text-[11px] font-semibold text-stone-600">Relationship</label>
+                        <input
+                          type="text"
+                          value={w.relationship || ''}
+                          placeholder="e.g. College Bestie"
+                          onChange={(e) => updateWish(idx, { relationship: e.target.value })}
+                          className="w-full mt-1 px-3 py-1.5 rounded-lg border border-stone-300 text-xs bg-white text-stone-800"
+                        />
+                      </div>
+                    </div>
+
+                    <div>
+                      <div className="flex items-center justify-between">
+                        <label className="text-[11px] font-semibold text-stone-600">Heartfelt Message</label>
+                        <TranslateButton value={w.message || ''} onTranslated={(t) => updateWish(idx, { message: t })} />
+                      </div>
+                      <textarea
+                        rows={3}
+                        value={w.message || ''}
+                        placeholder="e.g. Happy Birthday sunshine! Never change your goofy energy..."
+                        onChange={(e) => updateWish(idx, { message: e.target.value })}
+                        className="w-full mt-1 p-2 rounded-lg border border-stone-300 text-xs bg-white text-stone-800"
+                      />
+                    </div>
+
+                    {/* Attached Photo or Video preview */}
+                    {mediaUrl && (
+                      <div className="p-2.5 rounded-xl bg-amber-50/80 border border-amber-200 flex items-center justify-between gap-3">
+                        <div className="flex items-center gap-2">
+                          {isVideo ? (
+                            <div className="flex items-center gap-1.5 text-xs font-semibold text-amber-900">
+                              <Video className="w-4 h-4 text-amber-700" />
+                              <span>Attached Video</span>
+                            </div>
+                          ) : (
+                            <div className="flex items-center gap-2">
+                              <img
+                                src={mediaUrl}
+                                alt="Attached preview"
+                                className="w-12 h-12 object-cover rounded-lg border border-amber-300 cursor-pointer hover:opacity-90"
+                                onClick={() => window.open(mediaUrl, '_blank')}
+                              />
+                              <span className="text-xs font-semibold text-amber-900">Attached Photo</span>
+                            </div>
+                          )}
+                        </div>
+                        <a
+                          href={mediaUrl}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="text-[11px] font-semibold text-amber-800 hover:text-amber-950 underline"
+                        >
+                          Preview
+                        </a>
+                      </div>
+                    )}
                   </div>
-                </div>
-              ))}
+                );
+              })}
             </div>
           </div>
         </div>

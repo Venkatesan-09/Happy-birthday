@@ -775,15 +775,65 @@ const PeopleModule: React.FC<{ content: any }> = ({ content }) => {
       </div>
 
       <div className="grid sm:grid-cols-2 gap-4">
-        {wishes.map((w: any) => (
-          <div key={w.id} className="p-5 rounded-2xl bg-amber-50/50 border border-amber-200/80 shadow-xs flex flex-col justify-between">
-            <p className="text-sm text-stone-800 italic leading-relaxed">“{w.message}”</p>
-            <div className="mt-4 flex items-center justify-between text-xs text-stone-500 pt-3 border-t border-amber-200/50">
-              <span className="font-bold text-amber-900">{w.name} ({w.relationship})</span>
-              <span>{w.createdAt}</span>
+        {wishes.map((w: any, idx: number) => {
+          const rawUrl = w.mediaUrl || w.media?.url || (typeof w.media === 'string' ? w.media : null);
+          const mediaUrl = rawUrl ? getMediaUrl(rawUrl) : null;
+          const isVideo = w.type === 'video' || (Boolean(mediaUrl) && /\.(mp4|webm|mov|mkv)(\?.*)?$/i.test(mediaUrl));
+          const isAudio = w.type === 'audio' || (Boolean(mediaUrl) && /\.(mp3|wav|ogg|m4a)(\?.*)?$/i.test(mediaUrl));
+          const senderName = w.name || w.contributorName || 'Friend';
+          const relationship = w.relationship ? `(${w.relationship})` : '';
+
+          return (
+            <div
+              key={w.id || idx}
+              className="p-5 rounded-2xl bg-amber-50/50 border border-amber-200/80 shadow-xs flex flex-col justify-between overflow-hidden"
+            >
+              <div>
+                {/* Message text */}
+                {w.message && (
+                  <p className="text-sm text-stone-800 italic leading-relaxed">“{w.message}”</p>
+                )}
+
+                {/* Attached Photo or Video */}
+                {mediaUrl && (
+                  <div className="mt-3">
+                    {isVideo ? (
+                      <div className="rounded-xl overflow-hidden bg-black/5 border border-amber-200 shadow-2xs">
+                        <video
+                          src={mediaUrl}
+                          controls
+                          playsInline
+                          className="w-full max-h-64 object-cover rounded-xl"
+                        />
+                      </div>
+                    ) : isAudio ? (
+                      <div className="mt-2 p-2 bg-amber-100/50 rounded-xl border border-amber-200">
+                        <audio src={mediaUrl} controls className="w-full" />
+                      </div>
+                    ) : (
+                      <div className="rounded-xl overflow-hidden bg-stone-100 border border-amber-200 shadow-2xs group cursor-pointer">
+                        <img
+                          src={mediaUrl}
+                          alt={senderName}
+                          className="w-full max-h-64 object-cover rounded-xl transition-transform duration-300 group-hover:scale-105"
+                          onClick={() => window.open(mediaUrl, '_blank')}
+                          loading="lazy"
+                        />
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+
+              <div className="mt-4 flex items-center justify-between text-xs text-stone-500 pt-3 border-t border-amber-200/50">
+                <span className="font-bold text-amber-900">
+                  {senderName} {relationship}
+                </span>
+                <span>{w.createdAt || 'Recently'}</span>
+              </div>
             </div>
-          </div>
-        ))}
+          );
+        })}
       </div>
     </div>
   );

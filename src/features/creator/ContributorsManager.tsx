@@ -1,8 +1,9 @@
 import React, { useState, useEffect } from 'react';
 import { motion } from 'motion/react';
-import { Users, UserPlus, Check, X, Copy, Mail, Sparkles, MessageSquare, Trash2 } from 'lucide-react';
+import { Users, UserPlus, Check, X, Copy, Mail, Sparkles, MessageSquare, Trash2, Film, Image as ImageIcon } from 'lucide-react';
 import { api } from '../../services/api';
 import { Contributor, Contribution } from '../../types';
+import { getMediaUrl } from '../../utils/mediaUrl';
 
 interface ContributorsManagerProps {
   experienceId: string;
@@ -62,12 +63,18 @@ export const ContributorsManager: React.FC<ContributorsManagerProps> = ({
     }
   };
 
+  const [reviewingId, setReviewingId] = useState<string | null>(null);
+
   const handleReview = async (id: string, approved: boolean) => {
+    setReviewingId(id);
     try {
       await api.contributors.reviewContribution(id, approved);
-      loadData();
+      await loadData();
     } catch (err) {
-      console.error(err);
+      console.error('Review failed:', err);
+      alert('Failed to update contribution status. Please try again.');
+    } finally {
+      setReviewingId(null);
     }
   };
 
@@ -230,44 +237,95 @@ export const ContributorsManager: React.FC<ContributorsManagerProps> = ({
 
       {/* Incoming Contributions Review */}
       <div className="p-5 rounded-2xl bg-[#fffdfa] border border-stone-200 shadow-xs">
-        <h4 className="font-playfair font-bold text-stone-900 text-base mb-3 flex items-center gap-2">
-          <MessageSquare className="w-4 h-4 text-amber-700" />
-          <span>Wishes & Submissions ({contributions.length})</span>
-        </h4>
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1 mb-3">
+          <h4 className="font-playfair font-bold text-stone-900 text-base flex items-center gap-2">
+            <MessageSquare className="w-4 h-4 text-amber-700" />
+            <span>Wishes & Submissions ({contributions.length})</span>
+          </h4>
+          <span className="text-[11px] text-amber-800 bg-amber-50 border border-amber-200 px-2 py-0.5 rounded-full">
+            ✨ Approved wishes upload directly to "People Who Love You"
+          </span>
+        </div>
 
         {contributions.length === 0 ? (
           <p className="text-xs text-stone-400 py-3 text-center">No wishes submitted yet.</p>
         ) : (
           <div className="space-y-3">
-            {contributions.map((ctb) => (
-              <div
-                key={ctb._id}
-                className="p-3.5 rounded-xl border border-stone-200 bg-stone-50/50 flex flex-col sm:flex-row sm:items-center justify-between gap-3"
-              >
-                <div>
-                  <div className="flex items-center gap-2">
-                    <span className="font-bold text-xs text-stone-800">{ctb.contributorName}</span>
-                    <span className="text-[10px] text-stone-500">({ctb.relationship || 'Friend'})</span>
+            {contributions.map((ctb) => {
+              const rawUrl = ctb.media?.url || (typeof ctb.media === 'string' ? ctb.media : null);
+              const mediaUrl = rawUrl ? getMediaUrl(rawUrl) : null;
+              const isVideo = ctb.type === 'video' || (Boolean(mediaUrl) && /\.(mp4|webm|mov|mkv)(\?.*)?$/i.test(mediaUrl));
+
+              return (
+                <div
+                  key={ctb._id}
+                  className="p-3.5 rounded-xl border border-stone-200 bg-stone-50/50 flex flex-col sm:flex-row sm:items-center justify-between gap-3"
+                >
+                  <div className="space-y-1 max-w-md">
+                    <div className="flex items-center gap-2">
+                      <span className="font-bold text-xs text-stone-800">{ctb.contributorName}</span>
+                      <span className="text-[10px] text-stone-500">({ctb.relationship || 'Friend'})</span>
+                    </div>
+                    {ctb.message && (
+                      <p className="text-xs text-stone-700 italic">“{ctb.message}”</p>
+                    )}
+
+                    {/* Attached Photo or Video preview */}
+                    {mediaUrl && (
+                      <div className="pt-1">
+                        {isVideo ? (
+                          <div className="mt-1">
+                            <video
+                              src={mediaUrl}
+                              controls
+                              playsInline
+                              className="max-h-36 max-w-xs rounded-lg border border-stone-300 shadow-2xs"
+                            />
+                            <span className="text-[10px] text-stone-500 flex items-center gap-1 mt-0.5">
+                              <Film className="w-3 h-3 text-amber-700" /> Attached Video
+                            </span>
+                          </div>
+                        ) : (
+                          <div className="mt-1">
+                            <img
+                              src={mediaUrl}
+                              alt="Attached photo"
+                              className="max-h-28 rounded-lg border border-stone-300 shadow-2xs object-cover cursor-pointer hover:opacity-90"
+                              onClick={() => window.open(mediaUrl, '_blank')}
+                            />
+                            <span className="text-[10px] text-stone-500 flex items-center gap-1 mt-0.5">
+                              <ImageIcon className="w-3 h-3 text-amber-700" /> Click to view full image
+                            </span>
+                          </div>
+                        )}
+                      </div>
+                    )}
                   </div>
-                  <p className="text-xs text-stone-700 italic mt-1">“{ctb.message}”</p>
-                </div>
 
                 <div className="flex items-center gap-1.5 self-end sm:self-center">
-                  {ctb.reviewStatus === 'APPROVED' ? (
+                  {reviewingId === ctb._id ? (
+                    <span className="text-xs text-stone-400 animate-pulse px-3 py-1.5">Saving…</span>
+                  ) : ctb.reviewStatus?.toLowerCase() === 'approved' || ctb.approved === true ? (
                     <span className="text-xs font-bold text-emerald-700 bg-emerald-100 px-2.5 py-1 rounded-full flex items-center gap-1">
                       <Check className="w-3 h-3" /> Approved
+                    </span>
+                  ) : ctb.reviewStatus?.toLowerCase() === 'rejected' ? (
+                    <span className="text-xs font-bold text-rose-700 bg-rose-100 px-2.5 py-1 rounded-full flex items-center gap-1">
+                      <X className="w-3 h-3" /> Rejected
                     </span>
                   ) : (
                     <>
                       <button
                         onClick={() => handleReview(ctb._id, true)}
-                        className="px-3 py-1.5 rounded-lg bg-emerald-600 text-white font-semibold text-xs hover:bg-emerald-700 flex items-center gap-1 cursor-pointer"
+                        disabled={reviewingId !== null}
+                        className="px-3 py-1.5 rounded-lg bg-emerald-600 text-white font-semibold text-xs hover:bg-emerald-700 flex items-center gap-1 cursor-pointer disabled:opacity-50"
                       >
                         <Check className="w-3 h-3" /> Approve
                       </button>
                       <button
                         onClick={() => handleReview(ctb._id, false)}
-                        className="px-3 py-1.5 rounded-lg bg-rose-100 text-rose-800 font-semibold text-xs hover:bg-rose-200 flex items-center gap-1 cursor-pointer"
+                        disabled={reviewingId !== null}
+                        className="px-3 py-1.5 rounded-lg bg-rose-100 text-rose-800 font-semibold text-xs hover:bg-rose-200 flex items-center gap-1 cursor-pointer disabled:opacity-50"
                       >
                         <X className="w-3 h-3" /> Reject
                       </button>
@@ -275,7 +333,8 @@ export const ContributorsManager: React.FC<ContributorsManagerProps> = ({
                   )}
                 </div>
               </div>
-            ))}
+            );
+          })}
           </div>
         )}
       </div>

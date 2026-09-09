@@ -54,13 +54,62 @@ export class RecipientService {
       approved: true,
     }).sort({ createdAt: -1 });
 
-    // Sanitize modules: for wishes/guestbook modules, dynamically inject approved contributions
+    // Sanitize modules: for wishes/guestbook/PEOPLE modules, dynamically inject approved contributions
     const sanitizedModules = modules.map((mod) => {
       const modObj = mod.toJSON();
-      if (mod.type === 'guestbook' || mod.type === 'wishes') {
+      if (
+        mod.type === 'guestbook' ||
+        mod.type === 'wishes' ||
+        mod.type === 'PEOPLE' ||
+        mod.type === 'people'
+      ) {
+        const existingWishes = Array.isArray(modObj.content?.wishes)
+          ? [...modObj.content.wishes]
+          : [];
+
+        for (const ctb of approvedContributions) {
+          const ctbId = ctb._id.toString();
+          const existingIdx = existingWishes.findIndex(
+            (w: any) =>
+              w.contributionId === ctbId ||
+              w.id === `w_${ctbId}` ||
+              w.id === ctbId
+          );
+
+          const mediaUrl =
+            ctb.media?.url ||
+            (typeof ctb.media === 'string' ? ctb.media : undefined);
+          const isVideo =
+            ctb.type === 'video' ||
+            (Boolean(mediaUrl) && /\.(mp4|webm|mov|mkv)(\?.*)?$/i.test(mediaUrl));
+
+          const formattedItem = {
+            id: `w_${ctbId}`,
+            contributionId: ctbId,
+            name: ctb.contributorName,
+            relationship: ctb.relationship || 'Friend',
+            message: ctb.message,
+            mediaUrl,
+            media:
+              ctb.media ||
+              (mediaUrl ? { url: mediaUrl, type: isVideo ? 'video' : 'photo' } : undefined),
+            type: isVideo ? 'video' : mediaUrl ? 'photo' : 'message',
+            createdAt: 'Recently',
+          };
+
+          if (existingIdx >= 0) {
+            existingWishes[existingIdx] = {
+              ...existingWishes[existingIdx],
+              ...formattedItem,
+            };
+          } else {
+            existingWishes.push(formattedItem);
+          }
+        }
+
         modObj.content = {
           ...modObj.content,
-          wishes: approvedContributions,
+          wishes: existingWishes,
         };
       }
       return modObj;

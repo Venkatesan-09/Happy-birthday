@@ -104,6 +104,7 @@ export const contributionSubmitSchema = z.object({
   type: z.enum(['message', 'photo', 'video', 'audio', 'memory']).optional().default('message'),
   message: z.string().optional().default(''),
   media: z.any().optional(),
+  mediaUrl: z.string().optional(),
 });
 
 export const contributionReviewSchema = z.object({
