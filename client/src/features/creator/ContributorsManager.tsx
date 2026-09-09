@@ -62,12 +62,18 @@ export const ContributorsManager: React.FC<ContributorsManagerProps> = ({
     }
   };
 
+  const [reviewingId, setReviewingId] = useState<string | null>(null);
+
   const handleReview = async (id: string, approved: boolean) => {
+    setReviewingId(id);
     try {
       await api.contributors.reviewContribution(id, approved);
-      loadData();
+      await loadData();
     } catch (err) {
-      console.error(err);
+      console.error('Review failed:', err);
+      alert('Failed to update contribution status. Please try again.');
+    } finally {
+      setReviewingId(null);
     }
   };
 
@@ -253,21 +259,29 @@ export const ContributorsManager: React.FC<ContributorsManagerProps> = ({
                 </div>
 
                 <div className="flex items-center gap-1.5 self-end sm:self-center">
-                  {ctb.reviewStatus === 'APPROVED' ? (
+                  {reviewingId === ctb._id ? (
+                    <span className="text-xs text-stone-400 animate-pulse px-3 py-1.5">Saving…</span>
+                  ) : ctb.reviewStatus?.toLowerCase() === 'approved' || ctb.approved === true ? (
                     <span className="text-xs font-bold text-emerald-700 bg-emerald-100 px-2.5 py-1 rounded-full flex items-center gap-1">
                       <Check className="w-3 h-3" /> Approved
+                    </span>
+                  ) : ctb.reviewStatus?.toLowerCase() === 'rejected' ? (
+                    <span className="text-xs font-bold text-rose-700 bg-rose-100 px-2.5 py-1 rounded-full flex items-center gap-1">
+                      <X className="w-3 h-3" /> Rejected
                     </span>
                   ) : (
                     <>
                       <button
                         onClick={() => handleReview(ctb._id, true)}
-                        className="px-3 py-1.5 rounded-lg bg-emerald-600 text-white font-semibold text-xs hover:bg-emerald-700 flex items-center gap-1 cursor-pointer"
+                        disabled={reviewingId !== null}
+                        className="px-3 py-1.5 rounded-lg bg-emerald-600 text-white font-semibold text-xs hover:bg-emerald-700 flex items-center gap-1 cursor-pointer disabled:opacity-50"
                       >
                         <Check className="w-3 h-3" /> Approve
                       </button>
                       <button
                         onClick={() => handleReview(ctb._id, false)}
-                        className="px-3 py-1.5 rounded-lg bg-rose-100 text-rose-800 font-semibold text-xs hover:bg-rose-200 flex items-center gap-1 cursor-pointer"
+                        disabled={reviewingId !== null}
+                        className="px-3 py-1.5 rounded-lg bg-rose-100 text-rose-800 font-semibold text-xs hover:bg-rose-200 flex items-center gap-1 cursor-pointer disabled:opacity-50"
                       >
                         <X className="w-3 h-3" /> Reject
                       </button>

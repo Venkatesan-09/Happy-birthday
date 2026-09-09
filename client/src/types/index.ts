@@ -370,7 +370,7 @@ export interface Contribution {
     publicId?: string;
   };
   approved: boolean;
-  reviewStatus: 'PENDING' | 'APPROVED' | 'REJECTED';
+  reviewStatus: 'pending' | 'approved' | 'rejected' | 'PENDING' | 'APPROVED' | 'REJECTED';
   creatorNote?: string;
   createdAt: string;
 }
