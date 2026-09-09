@@ -1,4 +1,5 @@
 import express, { Request, Response } from 'express';
+import mongoose from 'mongoose';
 import path from 'path';
 import { createServer as createViteServer } from 'vite';
 import { config } from './server/config';
@@ -22,8 +23,12 @@ app.use(express.urlencoded({ extended: true, limit: '25mb' }));
 
 // Health check endpoint
 app.get('/api/health', (_req: Request, res: Response) => {
+  const dbStates = ['disconnected', 'connected', 'connecting', 'disconnecting'];
+  const dbState = dbStates[mongoose.connection.readyState] || 'unknown';
+
   res.json({
-    status: 'ok',
+    status: dbState === 'connected' ? 'ok' : 'degraded',
+    database: dbState,
     environment: config.nodeEnv,
     time: new Date().toISOString(),
   });
