@@ -22,9 +22,13 @@ export const ShareModal: React.FC<ShareModalProps> = ({
   const [copied, setCopied] = useState(false);
   const [qrDataUrl, setQrDataUrl] = useState<string>('');
   const [privacyType, setPrivacyType] = useState(experience.privacy?.type || 'PUBLIC');
+  const isProduction = typeof window !== 'undefined' &&
+    window.location.hostname !== 'localhost' &&
+    window.location.hostname !== '127.0.0.1';
+
   const [password, setPassword] = useState('');
   const [savedPrivacy, setSavedPrivacy] = useState(false);
-  const [linkMode, setLinkMode] = useState<'lan' | 'public' | 'local'>('lan');
+  const [linkMode, setLinkMode] = useState<'lan' | 'public' | 'local'>(isProduction ? 'public' : 'lan');
   const [publicTunnelUrl, setPublicTunnelUrl] = useState<string>('');
   const [detectedLanIp, setDetectedLanIp] = useState<string>('');
   const [allLanIps, setAllLanIps] = useState<string[]>([]);
@@ -40,6 +44,8 @@ export const ShareModal: React.FC<ShareModalProps> = ({
           if (res?.publicUrl) {
             setPublicTunnelUrl(res.publicUrl);
             setLinkMode('public');
+          } else if (isProduction) {
+            setLinkMode('public');
           } else {
             setPublicTunnelUrl('');
           }
@@ -53,15 +59,15 @@ export const ShareModal: React.FC<ShareModalProps> = ({
         .catch(() => {})
         .finally(() => setNetworkLoading(false));
     }
-  }, [isOpen]);
+  }, [isOpen, isProduction]);
 
   // Compute URL based on target mode (LAN IP, Public tunnel, or localhost)
   const frontendPort = 5173;
   const protocol = 'http';
 
   let baseOrigin = window.location.origin;
-  if (linkMode === 'public') {
-    baseOrigin = publicTunnelUrl || window.location.origin;
+  if (isProduction || linkMode === 'public') {
+    baseOrigin = (linkMode === 'public' && publicTunnelUrl) ? publicTunnelUrl : window.location.origin;
   } else if (linkMode === 'lan') {
     const hostIp = customHost.trim() || detectedLanIp;
     if (hostIp) {
@@ -102,7 +108,7 @@ export const ShareModal: React.FC<ShareModalProps> = ({
     }
   };
 
-  const hasTunnel = !!publicTunnelUrl;
+  const hasTunnel = isProduction || !!publicTunnelUrl;
   const hasLanIp = !!detectedLanIp;
 
   return (

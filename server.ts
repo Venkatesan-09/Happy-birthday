@@ -20,6 +20,7 @@ const app = express();
 
 app.use(express.json({ limit: '25mb' }));
 app.use(express.urlencoded({ extended: true, limit: '25mb' }));
+app.use('/uploads', express.static(path.join(process.cwd(), 'uploads')));
 
 // Health check endpoint
 app.get('/api/health', (_req: Request, res: Response) => {
@@ -34,12 +35,28 @@ app.get('/api/health', (_req: Request, res: Response) => {
   });
 });
 
+// Network info - provides local network IP & public URL for devices
+app.get('/api/network-info', (_req: Request, res: Response) => {
+  res.json({
+    success: true,
+    data: {
+      ip: '127.0.0.1',
+      allIps: ['127.0.0.1'],
+      publicUrl: config.clientUrl && !config.clientUrl.includes('localhost') ? config.clientUrl : null,
+      lanPort: config.port,
+      frontendPort: 5173,
+    },
+  });
+});
+
 // Mount modular API routers
 app.use('/api/auth', authRoutes);
-app.use('/api/experiences', experienceRoutes);
-app.use('/api', moduleRoutes);
-app.use('/api', contributorRoutes);
 app.use('/api/public', recipientRoutes);
+app.use('/api/recipient', recipientRoutes);
+app.use('/api/experiences', experienceRoutes);
+app.use('/api/experiences', moduleRoutes);
+app.use('/api/modules', moduleRoutes);
+app.use('/api', contributorRoutes);
 app.use('/api/ai', aiRoutes);
 app.use('/api/media', mediaRoutes);
 app.use('/api/analytics', analyticsRoutes);

@@ -87,9 +87,13 @@ export const ContributorsManager: React.FC<ContributorsManagerProps> = ({
       .catch(() => {});
   }, []);
 
-  // Build the best invite link: Cloudflare public tunnel works anywhere globally on mobile/desktop,
-  // fall back to LAN IP for local WiFi, last resort localhost.
+  // Build the best invite link: Production domain works anywhere globally on mobile/desktop,
+  // Cloudflare tunnel works anywhere, LAN IP works on local WiFi, last resort localhost.
   const buildInviteLink = (token: string): string => {
+    // If running on a live deployed domain (Render, Vercel, custom domain)
+    if (typeof window !== 'undefined' && window.location.hostname !== 'localhost' && window.location.hostname !== '127.0.0.1') {
+      return `${window.location.origin}/contribute/${token}`;
+    }
     // Cloudflare public tunnel: works anywhere on any device (cellular 4G/5G or WiFi)
     if (publicTunnelUrl) {
       return `${publicTunnelUrl}/contribute/${token}`;
@@ -108,6 +112,8 @@ export const ContributorsManager: React.FC<ContributorsManagerProps> = ({
     setCopiedToken(token);
     setTimeout(() => setCopiedToken(null), 2000);
   };
+
+  const isProduction = typeof window !== 'undefined' && window.location.hostname !== 'localhost' && window.location.hostname !== '127.0.0.1';
 
   return (
     <div className="space-y-6 text-left">
@@ -147,7 +153,12 @@ export const ContributorsManager: React.FC<ContributorsManagerProps> = ({
         </form>
 
         {/* Network info note */}
-        {publicTunnelUrl ? (
+        {isProduction ? (
+          <p className="text-[10px] text-emerald-700 mt-2.5 font-medium flex items-center gap-1">
+            <span>🌐</span>
+            <span>Live Public Link — openable from any phone, laptop, or tablet worldwide.</span>
+          </p>
+        ) : publicTunnelUrl ? (
           <p className="text-[10px] text-emerald-700 mt-2.5 font-medium">
             🌍 Links use the public Cloudflare tunnel — openable from any phone worldwide (cellular data or Wi-Fi).
           </p>
