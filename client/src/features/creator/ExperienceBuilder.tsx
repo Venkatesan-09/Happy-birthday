@@ -36,6 +36,8 @@ import {
   Mic,
   Video,
   Link,
+  Pause,
+  Play,
 } from 'lucide-react';
 import { Experience, ExperienceModule, ModuleType } from '../../types';
 import { api } from '../../services/api';

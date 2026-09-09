@@ -254,7 +254,7 @@ export const ContributorsManager: React.FC<ContributorsManagerProps> = ({
             {contributions.map((ctb) => {
               const rawUrl = ctb.media?.url || (typeof ctb.media === 'string' ? ctb.media : null);
               const mediaUrl = rawUrl ? getMediaUrl(rawUrl) : null;
-              const isVideo = ctb.type === 'video' || (Boolean(mediaUrl) && /\.(mp4|webm|mov|mkv)(\?.*)?$/i.test(mediaUrl));
+              const isVideo = ctb.type === 'VIDEO' || (Boolean(mediaUrl) && /\.(mp4|webm|mov|mkv)(\?.*)?$/i.test(mediaUrl));
 
               return (
                 <div
