@@ -42,23 +42,92 @@ export const ExperienceRenderer: React.FC<ExperienceRendererProps> = ({
   const [isAudioMuted, setIsAudioMuted] = useState(false);
   const modules = experience.modules || [];
 
-  const toggleSoundtrack = () => {
-    if (isPlayingAudio) {
-      SoundEffects.stopAmbientTrack();
-      setIsPlayingAudio(false);
+  // Resolve background MP3 audio URL: from experience.backgroundMusicUrl OR from VOICE module
+  const voiceModule = modules.find(
+    (m) => (m.type === 'VOICE' || m.type === 'voice') && m.enabled && m.content?.audioUrl
+  );
+  const rawBgAudio =
+    experience.backgroundMusicUrl ||
+    (voiceModule?.content?.playAsBackground !== false ? voiceModule?.content?.audioUrl : null) ||
+    voiceModule?.content?.audioUrl;
+  const backgroundAudioUrl = rawBgAudio ? getMediaUrl(rawBgAudio) : null;
+
+  const bgAudioRef = React.useRef<HTMLAudioElement | null>(null);
+
+  const startBackgroundAudio = () => {
+    if (isAudioMuted) return;
+    if (backgroundAudioUrl) {
+      if (!bgAudioRef.current) {
+        bgAudioRef.current = new Audio(backgroundAudioUrl);
+        bgAudioRef.current.loop = true;
+      }
+      bgAudioRef.current
+        .play()
+        .then(() => {
+          setIsPlayingAudio(true);
+        })
+        .catch(() => {
+          // Autoplay policy may block initial play until user interaction
+        });
     } else {
       SoundEffects.startAmbientTrack();
       setIsPlayingAudio(true);
     }
   };
 
-  const toggleMute = () => {
-    const muted = SoundEffects.toggleMute();
-    setIsAudioMuted(muted);
-    if (muted) {
-      setIsPlayingAudio(false);
+  const stopBackgroundAudio = () => {
+    if (bgAudioRef.current) {
+      bgAudioRef.current.pause();
+    }
+    SoundEffects.stopAmbientTrack();
+    setIsPlayingAudio(false);
+  };
+
+  const toggleSoundtrack = () => {
+    if (isPlayingAudio) {
+      stopBackgroundAudio();
+    } else {
+      startBackgroundAudio();
     }
   };
+
+  const toggleMute = () => {
+    const nextMuted = !isAudioMuted;
+    setIsAudioMuted(nextMuted);
+    if (bgAudioRef.current) {
+      bgAudioRef.current.muted = nextMuted;
+    }
+    SoundEffects.toggleMute();
+    if (nextMuted) {
+      setIsPlayingAudio(false);
+    } else if (bgAudioRef.current && !bgAudioRef.current.paused) {
+      setIsPlayingAudio(true);
+    }
+  };
+
+  // Start background audio on first user touch / click
+  React.useEffect(() => {
+    if (!backgroundAudioUrl) return;
+
+    const handleFirstTouch = () => {
+      if (!bgAudioRef.current || bgAudioRef.current.paused) {
+        startBackgroundAudio();
+      }
+    };
+
+    window.addEventListener('click', handleFirstTouch, { once: true });
+    window.addEventListener('touchstart', handleFirstTouch, { once: true });
+
+    return () => {
+      window.removeEventListener('click', handleFirstTouch);
+      window.removeEventListener('touchstart', handleFirstTouch);
+      if (bgAudioRef.current) {
+        bgAudioRef.current.pause();
+        bgAudioRef.current = null;
+      }
+      SoundEffects.stopAmbientTrack();
+    };
+  }, [backgroundAudioUrl]);
 
   const markModuleCompleted = (modId: string, type: string) => {
     if (onTrackProgress) {
@@ -99,7 +168,15 @@ export const ExperienceRenderer: React.FC<ExperienceRendererProps> = ({
             className="relative"
             onViewportEnter={() => markModuleCompleted(mod._id, mod.type)}
           >
-            {renderModule(mod, experience, markModuleCompleted, discoveredSecrets)}
+            {renderModule(
+              mod,
+              experience,
+              markModuleCompleted,
+              discoveredSecrets,
+              startBackgroundAudio,
+              isPlayingAudio,
+              toggleSoundtrack
+            )}
           </motion.section>
         ))}
       </div>
@@ -111,13 +188,23 @@ function renderModule(
   mod: ExperienceModule,
   exp: Experience,
   onComplete: (id: string, type: string) => void,
-  discoveredSecrets: string[]
+  discoveredSecrets: string[],
+  onStartAudio?: () => void,
+  isPlayingAudio?: boolean,
+  onToggleAudio?: () => void
 ) {
   const content: any = mod.content || {};
 
   switch (mod.type) {
     case 'CINEMATIC_OPENING':
-      return <CinematicOpeningModule content={content} recipient={exp.recipient} onComplete={() => onComplete(mod._id, mod.type)} />;
+      return (
+        <CinematicOpeningModule
+          content={content}
+          recipient={exp.recipient}
+          onComplete={() => onComplete(mod._id, mod.type)}
+          onStartAudio={onStartAudio}
+        />
+      );
 
     case 'BIRTHDAY_REVEAL':
       return <BirthdayRevealModule content={content} recipient={exp.recipient} onComplete={() => onComplete(mod._id, mod.type)} />;
@@ -132,7 +219,13 @@ function renderModule(
       return <MusicModule content={content} />;
 
     case 'VOICE':
-      return <VoiceModule content={content} />;
+      return (
+        <VoiceModule
+          content={content}
+          isBackgroundPlaying={isPlayingAudio}
+          onToggleBackground={onToggleAudio}
+        />
+      );
 
     case 'VIDEO':
       return <VideoModule content={content} />;
@@ -176,13 +269,22 @@ function renderModule(
 }
 
 // 1. CINEMATIC OPENING
-const CinematicOpeningModule: React.FC<{ content: any; recipient: any; onComplete: () => void }> = ({ content, recipient, onComplete }) => {
+const CinematicOpeningModule: React.FC<{
+  content: any;
+  recipient: any;
+  onComplete: () => void;
+  onStartAudio?: () => void;
+}> = ({ content, recipient, onComplete, onStartAudio }) => {
   const [hasBegun, setHasBegun] = useState(false);
 
   const handleBegin = () => {
     setHasBegun(true);
     SoundEffects.playSparkle();
-    SoundEffects.startAmbientTrack();
+    if (onStartAudio) {
+      onStartAudio();
+    } else {
+      SoundEffects.startAmbientTrack();
+    }
     onComplete();
   };
 
@@ -427,30 +529,40 @@ const MusicModule: React.FC<{ content: any }> = ({ content }) => {
 };
 
 // 6. VOICE NOTE
-const VoiceModule: React.FC<{ content: any }> = ({ content }) => {
-  const [playing, setPlaying] = useState(false);
+const VoiceModule: React.FC<{
+  content: any;
+  isBackgroundPlaying?: boolean;
+  onToggleBackground?: () => void;
+}> = ({ content, isBackgroundPlaying = false, onToggleBackground }) => {
+  const [localPlaying, setLocalPlaying] = useState(false);
   const [showText, setShowText] = useState(false);
   const audioRef = React.useRef<HTMLAudioElement | null>(null);
 
   const hasRealAudio = !!(content.audioUrl && content.audioUrl.trim());
+  const isPlaying = onToggleBackground && hasRealAudio ? isBackgroundPlaying : localPlaying;
 
   const playVoice = () => {
+    if (onToggleBackground && hasRealAudio) {
+      onToggleBackground();
+      return;
+    }
+
     if (hasRealAudio) {
       if (!audioRef.current) {
         audioRef.current = new Audio(getMediaUrl(content.audioUrl));
-        audioRef.current.onended = () => setPlaying(false);
+        audioRef.current.onended = () => setLocalPlaying(false);
       }
-      if (playing) {
+      if (localPlaying) {
         audioRef.current.pause();
         audioRef.current.currentTime = 0;
-        setPlaying(false);
+        setLocalPlaying(false);
       } else {
         audioRef.current.play().catch(() => {});
-        setPlaying(true);
+        setLocalPlaying(true);
         SoundEffects.playChime();
       }
     } else {
-      setPlaying(!playing);
+      setLocalPlaying(!localPlaying);
       SoundEffects.playChime();
     }
   };

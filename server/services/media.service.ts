@@ -68,13 +68,17 @@ export async function creatorUpload(input: CreatorUploadInput): Promise<IMedia> 
 
   let result: CloudinaryUploadResult;
   try {
-    // 3. Upload to Cloudinary
+    // 3. Upload to Cloudinary with timeout guard (8s)
     const folder = buildCloudinaryFolder(experienceId, mediaType);
-    result = await uploadStream(file.buffer, {
+    const uploadPromise = uploadStream(file.buffer, {
       folder,
       resourceType: cloudinaryResourceType,
       tags: ['dearyou', `exp_${experienceId}`, `creator_${userId}`],
     });
+    const timeoutPromise = new Promise<never>((_, reject) =>
+      setTimeout(() => reject(new Error('Cloudinary upload timed out after 8s')), 8000)
+    );
+    result = await Promise.race([uploadPromise, timeoutPromise]);
   } catch (cloudErr: any) {
     console.warn('[MediaService] Cloudinary upload failed, falling back to local storage:', cloudErr.message);
     const uploadsDir = path.join(process.cwd(), 'uploads');
@@ -158,11 +162,15 @@ export async function contributorUpload(input: ContributorUploadInput): Promise<
   let result: CloudinaryUploadResult;
   try {
     const folder = buildCloudinaryFolder(experienceId, `contributors/${mediaType}`);
-    result = await uploadStream(file.buffer, {
+    const uploadPromise = uploadStream(file.buffer, {
       folder,
       resourceType: cloudinaryResourceType,
       tags: ['dearyou', `exp_${experienceId}`, `contributor_${contributor._id.toString()}`],
     });
+    const timeoutPromise = new Promise<never>((_, reject) =>
+      setTimeout(() => reject(new Error('Cloudinary upload timed out after 8s')), 8000)
+    );
+    result = await Promise.race([uploadPromise, timeoutPromise]);
   } catch (cloudErr: any) {
     console.warn('[MediaService] Cloudinary upload failed for contributor, falling back to local storage:', cloudErr.message);
     const uploadsDir = path.join(process.cwd(), 'uploads');
