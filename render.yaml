@@ -1,0 +1,42 @@
+# render.yaml — Render Blueprint for DearYou Birthday App
+# Render will auto-read this file and pre-fill your service configuration.
+# Docs: https://render.com/docs/blueprint-spec
+
+services:
+  - type: web
+    name: dearyou-birthday
+    runtime: docker
+    dockerfilePath: ./Dockerfile
+    region: singapore          # Closest to India — lowest latency
+    plan: free                 # Free tier ($0/month)
+    branch: main
+    healthCheckPath: /api/health
+
+    # ── Environment Variables ────────────────────────────────────────────────
+    # Do NOT put real secrets here — this file is committed to git.
+    # Set the actual values in the Render Dashboard → Environment tab.
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: PORT
+        value: 3000
+
+      # ── Set these in Render Dashboard (sensitive secrets) ─────────────────
+      - key: MONGODB_URI
+        sync: false            # Render will prompt you to fill this in
+      - key: JWT_SECRET
+        sync: false
+      - key: JWT_EXPIRES_IN
+        value: 7d
+      - key: GEMINI_API_KEY
+        sync: false
+      - key: CLOUDINARY_CLOUD_NAME
+        sync: false
+      - key: CLOUDINARY_API_KEY
+        sync: false
+      - key: CLOUDINARY_API_SECRET
+        sync: false
+      - key: CLIENT_URL
+        sync: false            # Set to: https://dearyou-birthday.onrender.com
+      - key: APP_URL
+        sync: false            # Set to: https://dearyou-birthday.onrender.com

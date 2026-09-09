@@ -26,6 +26,56 @@ export interface AIGenerateParams {
   length?: 'short' | 'medium' | 'deep';
 }
 
+export interface TranslateParams {
+  text: string;
+  targetLanguage: 'english' | 'tamil' | 'telugu';
+  sourceLanguage?: string;
+}
+
+export async function translateText(params: TranslateParams): Promise<{ result: string; language: string }> {
+  const { text, targetLanguage, sourceLanguage } = params;
+  const client = getGenAIClient();
+
+  const languageMap: Record<string, string> = {
+    english: 'English',
+    tamil: 'Tamil (தமிழ்)',
+    telugu: 'Telugu (తెలుగు)',
+  };
+
+  const targetLangLabel = languageMap[targetLanguage] || targetLanguage;
+
+  if (!client) {
+    return { result: text, language: targetLanguage };
+  }
+
+  const prompt = `You are a precise translation assistant for DearYou, a birthday experience app.
+
+Translate the following text to ${targetLangLabel}.
+${sourceLanguage ? `Source language: ${sourceLanguage}` : ''}
+
+Rules:
+- Preserve the emotional tone, warmth, and meaning of the original text exactly.
+- Do NOT add any explanations, notes, or commentary.
+- Return ONLY the translated text, nothing else.
+- Maintain any line breaks or paragraphs in the original text.
+- If the text is already in the target language, return it as-is.
+
+Text to translate:
+${text}`;
+
+  try {
+    const response = await client.models.generateContent({
+      model: 'gemini-3.6-flash',
+      contents: prompt,
+    });
+    const translated = response.text?.trim() || text;
+    return { result: translated, language: targetLanguage };
+  } catch (err: any) {
+    console.error('Translation error:', err);
+    return { result: text, language: targetLanguage };
+  }
+}
+
 export async function generateAICentent(params: AIGenerateParams): Promise<{ result: string; provider: string; model: string }> {
   const { type, relationship, recipientName, tone, context, memories, length } = params;
   const client = getGenAIClient();
@@ -56,7 +106,7 @@ CRITICAL GUIDELINES:
 
   try {
     const response = await client.models.generateContent({
-      model: 'gemini-3.8-flash',
+      model: 'gemini-3.6-flash',
       contents: prompt,
     });
 
@@ -64,7 +114,7 @@ CRITICAL GUIDELINES:
     return {
       result: text,
       provider: 'gemini',
-      model: 'gemini-3.8-flash',
+      model: 'gemini-3.6-flash',
     };
   } catch (err: any) {
     console.error('Error generating AI content via Gemini API:', err);
@@ -97,3 +147,5 @@ function getCraftedFallback(params: AIGenerateParams): string {
       return `To ${recipientName}: You have explored the memories, but the greatest adventure is still ahead. Blow out the candles and know you are unconditionally loved today and always. Happy Birthday! 🎂✨`;
   }
 }
+
+export const generateAIContent = generateAICentent;

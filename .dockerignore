@@ -1,0 +1,33 @@
+# Dependencies — never copy, always reinstall inside Docker
+node_modules
+server/node_modules
+client/node_modules
+
+# Local build artifacts — rebuilt inside Docker
+dist
+build
+server/dist
+client/dist
+
+# Environment files — secrets come from Render env vars, NOT from files
+.env
+.env.*
+!.env.example
+
+# Git & CI
+.git
+.gitignore
+.github
+
+# OS / Editor artifacts
+.DS_Store
+Thumbs.db
+*.log
+*.exe
+*.pid
+
+# Dev tooling
+cloudflared.exe
+
+# Render / deployment docs (not needed in image)
+DEPLOYMENT_GUIDE.md
