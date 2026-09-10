@@ -216,7 +216,13 @@ function renderModule(
       return <MemoryMapModule content={content} />;
 
     case 'MUSIC':
-      return <MusicModule content={content} />;
+      return (
+        <MusicModule
+          content={content}
+          isBackgroundPlaying={isPlayingAudio}
+          onToggleBackground={onToggleAudio}
+        />
+      );
 
     case 'VOICE':
       return (
@@ -447,34 +453,53 @@ const MemoryMapModule: React.FC<{ content: any }> = ({ content }) => {
   );
 };
 
-// 5. MUSIC
-const MusicModule: React.FC<{ content: any }> = ({ content }) => {
-  const [playing, setPlaying] = useState(false);
+// 5. MUSIC — Personal Soundtrack / Voice Note From My Heart
+const MusicModule: React.FC<{
+  content: any;
+  isBackgroundPlaying?: boolean;
+  onToggleBackground?: () => void;
+}> = ({ content, isBackgroundPlaying = false, onToggleBackground }) => {
+  const [localPlaying, setLocalPlaying] = useState(false);
   const audioRef = React.useRef<HTMLAudioElement | null>(null);
 
   const hasCustomAudio = !!(content.audioUrl && content.audioUrl.trim());
+  const playsInBackground = content.playAsBackground !== false;
+
+  // If playAsBackground is enabled and onToggleBackground is provided,
+  // this module controls/mirrors the global background audio player.
+  const isPlaying = onToggleBackground && hasCustomAudio && playsInBackground
+    ? isBackgroundPlaying
+    : localPlaying;
 
   const toggle = () => {
+    // Use global background player if available and configured
+    if (onToggleBackground && hasCustomAudio && playsInBackground) {
+      onToggleBackground();
+      return;
+    }
+
+    // Fallback: local audio element
     if (hasCustomAudio) {
       if (!audioRef.current) {
         audioRef.current = new Audio(getMediaUrl(content.audioUrl));
-        audioRef.current.loop = content.loop !== false;
-        audioRef.current.volume = content.volume ?? 0.6;
+        audioRef.current.loop = true;
+        audioRef.current.volume = content.volume ?? 0.7;
+        audioRef.current.onended = () => setLocalPlaying(false);
       }
-      if (playing) {
+      if (localPlaying) {
         audioRef.current.pause();
-        setPlaying(false);
+        setLocalPlaying(false);
       } else {
         audioRef.current.play().catch(() => {});
-        setPlaying(true);
+        setLocalPlaying(true);
       }
     } else {
-      if (playing) {
+      if (localPlaying) {
         SoundEffects.stopAmbientTrack();
-        setPlaying(false);
+        setLocalPlaying(false);
       } else {
         SoundEffects.startAmbientTrack();
-        setPlaying(true);
+        setLocalPlaying(true);
       }
     }
   };
@@ -490,37 +515,85 @@ const MusicModule: React.FC<{ content: any }> = ({ content }) => {
   }, []);
 
   return (
-    <div className="p-6 rounded-3xl bg-[#fffdfa] border border-amber-200 shadow-sm">
-      <div className="flex items-center justify-between">
+    <div className="relative overflow-hidden rounded-3xl bg-gradient-to-br from-rose-50 via-[#fffdfa] to-amber-50/80 border border-rose-200/80 shadow-md">
+      {/* Background blur decoration */}
+      <div className="absolute -top-10 -right-10 w-40 h-40 rounded-full bg-rose-200/30 blur-3xl pointer-events-none" />
+      <div className="absolute -bottom-8 -left-8 w-32 h-32 rounded-full bg-amber-200/20 blur-2xl pointer-events-none" />
+
+      <div className="relative p-5 sm:p-6 space-y-4">
+        {/* Header badge */}
+        <div className="flex items-center justify-between">
+          <span className="inline-flex items-center gap-1.5 text-[11px] font-bold text-rose-700 bg-rose-100/80 px-2.5 py-1 rounded-full border border-rose-200">
+            <span className="w-1.5 h-1.5 rounded-full bg-rose-500 animate-pulse" />
+            {playsInBackground ? 'Plays In Background' : 'Voice Note'}
+          </span>
+          {isPlaying && (
+            <span className="text-[11px] font-semibold text-amber-800 bg-amber-100 px-2.5 py-1 rounded-full animate-pulse">
+              ♪ Now Playing
+            </span>
+          )}
+        </div>
+
+        {/* Player row */}
         <div className="flex items-center gap-4">
           <button
+            type="button"
             onClick={toggle}
-            className="w-12 h-12 rounded-full bg-amber-700 text-white flex items-center justify-center shadow-md hover:bg-amber-800 transition cursor-pointer"
+            className={`w-14 h-14 rounded-full flex items-center justify-center shadow-lg transition-all duration-200 cursor-pointer flex-shrink-0 ${
+              isPlaying
+                ? 'bg-rose-600 hover:bg-rose-700 scale-95'
+                : 'bg-gradient-to-br from-rose-600 to-amber-600 hover:from-rose-700 hover:to-amber-700'
+            }`}
           >
-            {playing ? <Pause className="w-5 h-5 fill-current" /> : <Play className="w-5 h-5 fill-current ml-0.5" />}
+            {isPlaying
+              ? <Pause className="w-6 h-6 text-white fill-current" />
+              : <Play className="w-6 h-6 text-white fill-current ml-0.5" />
+            }
           </button>
-          <div>
-            <h4 className="font-playfair font-bold text-stone-900">{content.title || content.trackTitle || 'Voice Note From My Heart'}</h4>
-            <p className="text-xs text-stone-500">{content.senderName ? `From ${content.senderName}` : (content.artist || 'Special Voice Wish')}</p>
+
+          <div className="flex-1 min-w-0">
+            <h4 className="font-playfair font-bold text-stone-900 text-base leading-tight truncate">
+              {content.title || 'Voice Note From My Heart'}
+            </h4>
+            <p className="text-xs text-stone-500 mt-0.5">
+              {content.senderName ? `From ${content.senderName}` : 'A special audio wish just for you'}
+              {content.durationSeconds ? ` • ${content.durationSeconds}` : ''}
+            </p>
           </div>
         </div>
-        <span className="text-xs px-3 py-1 rounded-full bg-amber-100 text-amber-800 font-medium">
-          {playing ? '♪ Now Playing' : 'Tap to Play'}
-        </span>
-      </div>
-      {/* Animated bars */}
-      {playing && (
-        <div className="flex items-center gap-1 h-6 px-4 mt-3 bg-amber-50 rounded-xl">
-          {Array.from({ length: 24 }).map((_, i) => (
+
+        {/* Animated waveform bars */}
+        <div className="flex items-center gap-0.5 h-10 px-2 bg-white/60 backdrop-blur-sm rounded-2xl border border-rose-100">
+          {Array.from({ length: 36 }).map((_, i) => (
             <motion.div
               key={i}
-              animate={{ height: [4, 10 + (i % 5) * 3, 4] }}
-              transition={{ repeat: Infinity, duration: 0.9, delay: i * 0.05 }}
-              className="w-1.5 bg-amber-500 rounded-full"
+              animate={
+                isPlaying
+                  ? { height: [4, 8 + ((i * 7 + 3) % 18), 4] }
+                  : { height: i % 3 === 0 ? 8 : i % 2 === 0 ? 6 : 4 }
+              }
+              transition={
+                isPlaying
+                  ? { repeat: Infinity, duration: 0.6 + (i % 4) * 0.1, delay: i * 0.03, ease: 'easeInOut' }
+                  : { duration: 0.3 }
+              }
+              className={`flex-1 rounded-full ${
+                isPlaying ? 'bg-gradient-to-t from-rose-500 to-amber-400' : 'bg-rose-200'
+              }`}
+              style={{ minWidth: 2, maxWidth: 6 }}
             />
           ))}
         </div>
-      )}
+
+        {/* Tap hint */}
+        {!isPlaying && (
+          <p className="text-center text-[11px] text-stone-400">
+            {playsInBackground
+              ? '🎵 Also plays automatically in background'
+              : 'Tap the button above to listen'}
+          </p>
+        )}
+      </div>
     </div>
   );
 };
