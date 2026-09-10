@@ -1,5 +1,3 @@
-import fs from 'fs';
-import path from 'path';
 import mongoose from 'mongoose';
 import { Media, IMedia } from '../models/Media';
 import { Experience } from '../models/Experience';
@@ -11,22 +9,6 @@ import {
 } from './cloudinary/cloudinary.service';
 import { inferMediaType, toCloudinaryResourceType } from '../middleware/upload.middleware';
 import { hashToken } from '../utils';
-
-// Helper to save uploaded file locally if Cloudinary is unavailable or returns 403
-function saveLocalMedia(file: Express.Multer.File): { url: string; publicId: string } {
-  const uploadsDir = path.join(process.cwd(), 'uploads');
-  if (!fs.existsSync(uploadsDir)) {
-    fs.mkdirSync(uploadsDir, { recursive: true });
-  }
-  const ext = path.extname(file.originalname) || '';
-  const filename = `${Date.now()}-${Math.random().toString(36).substring(2, 8)}${ext}`;
-  const filePath = path.join(uploadsDir, filename);
-  fs.writeFileSync(filePath, file.buffer);
-  return {
-    url: `/uploads/${filename}`,
-    publicId: filename,
-  };
-}
 
 // ── Types ──────────────────────────────────────────────────────────────────
 
@@ -66,11 +48,44 @@ async function verifyExperienceOwnership(
   }
 }
 
+import fs from 'fs';
+import path from 'path';
+import crypto from 'crypto';
+
+// ── Local Disk Storage Fallback ────────────────────────────────────────────
+// Saves file to /uploads directory when Cloudinary credentials lack write permissions (403) or fail.
+function saveLocalFile(
+  file: Express.Multer.File,
+  experienceId: string,
+  mediaType: string
+): CloudinaryUploadResult {
+  const uploadsDir = path.join(process.cwd(), 'uploads', mediaType);
+  if (!fs.existsSync(uploadsDir)) {
+    fs.mkdirSync(uploadsDir, { recursive: true });
+  }
+
+  const ext = path.extname(file.originalname) || (mediaType === 'audio' ? '.mp3' : mediaType === 'video' ? '.mp4' : '.jpg');
+  const safeName = `${Date.now()}-${crypto.randomBytes(4).toString('hex')}${ext}`;
+  const filePath = path.join(uploadsDir, safeName);
+  fs.writeFileSync(filePath, file.buffer);
+
+  const relativeUrl = `/uploads/${mediaType}/${safeName}`;
+
+  return {
+    publicId: `local_${safeName}`,
+    resourceType: mediaType,
+    secureUrl: relativeUrl,
+    url: relativeUrl,
+    format: ext.replace('.', ''),
+    bytes: file.size,
+  };
+}
+
 // ── Service Methods ────────────────────────────────────────────────────────
 
 /**
- * Handles creator media upload: verifies ownership, streams to Cloudinary,
- * stores metadata in MongoDB.
+ * Handles creator media upload: verifies ownership, streams to Cloudinary
+ * (with local fallback if Cloudinary credentials return 403/502), stores metadata in MongoDB.
  */
 export async function creatorUpload(input: CreatorUploadInput): Promise<IMedia> {
   const { file, experienceId, moduleId, altText, caption, title, userId } = input;
@@ -82,7 +97,7 @@ export async function creatorUpload(input: CreatorUploadInput): Promise<IMedia> 
   const mediaType = inferMediaType(file.mimetype);
   const cloudinaryResourceType = toCloudinaryResourceType(mediaType);
 
-  let result: CloudinaryUploadResult | null = null;
+  let result: CloudinaryUploadResult;
   try {
     // 3. Upload to Cloudinary
     // Timeout: 90s — videos up to 100 MB need time on Render's free tier.
@@ -98,17 +113,16 @@ export async function creatorUpload(input: CreatorUploadInput): Promise<IMedia> 
     );
     result = await Promise.race([uploadPromise, timeoutPromise]);
   } catch (cloudErr: any) {
-    console.warn(`[MediaService] Cloudinary upload failed (${cloudErr.message}). Storing locally as fallback.`);
-    // Fallback: store locally on server
-    const local = saveLocalMedia(file);
-    result = {
-      publicId: local.publicId,
-      resourceType: cloudinaryResourceType,
-      secureUrl: local.url,
-      url: local.url,
-      format: path.extname(file.originalname).replace(/^\./, '') || 'bin',
-      bytes: file.size,
-    };
+    console.warn(`[MediaService] Cloudinary upload failed (${cloudErr.message}). Falling back to local storage...`);
+    // Fallback: save to local disk so user uploads succeed even if Cloudinary has permission issues
+    try {
+      result = saveLocalFile(file, experienceId, mediaType);
+    } catch (localErr: any) {
+      throw Object.assign(
+        new Error(`Media upload failed: ${cloudErr.message}`),
+        { status: 502 }
+      );
+    }
   }
 
   // 4. Save Media record in MongoDB
@@ -142,8 +156,8 @@ export async function creatorUpload(input: CreatorUploadInput): Promise<IMedia> 
 }
 
 /**
- * Handles contributor media upload: verifies invite token, streams to Cloudinary,
- * stores metadata in MongoDB.
+ * Handles contributor media upload: verifies invite token, streams to Cloudinary
+ * (with local fallback), stores metadata in MongoDB.
  */
 export async function contributorUpload(input: ContributorUploadInput): Promise<IMedia> {
   const { file, token, altText, caption } = input;
@@ -169,7 +183,7 @@ export async function contributorUpload(input: ContributorUploadInput): Promise<
   const mediaType = inferMediaType(file.mimetype);
   const cloudinaryResourceType = toCloudinaryResourceType(mediaType);
 
-  let result: CloudinaryUploadResult | null = null;
+  let result: CloudinaryUploadResult;
   try {
     // 2b. Upload to Cloudinary with 90s timeout
     const folder = buildCloudinaryFolder(experienceId, `contributors/${mediaType}`);
@@ -184,16 +198,15 @@ export async function contributorUpload(input: ContributorUploadInput): Promise<
     );
     result = await Promise.race([uploadPromise, timeoutPromise]);
   } catch (cloudErr: any) {
-    console.warn(`[MediaService] Contributor Cloudinary upload failed (${cloudErr.message}). Storing locally as fallback.`);
-    const local = saveLocalMedia(file);
-    result = {
-      publicId: local.publicId,
-      resourceType: cloudinaryResourceType,
-      secureUrl: local.url,
-      url: local.url,
-      format: path.extname(file.originalname).replace(/^\./, '') || 'bin',
-      bytes: file.size,
-    };
+    console.warn(`[MediaService] Contributor Cloudinary upload failed (${cloudErr.message}). Falling back to local storage...`);
+    try {
+      result = saveLocalFile(file, experienceId, mediaType);
+    } catch (localErr: any) {
+      throw Object.assign(
+        new Error(`Media upload failed: ${cloudErr.message}`),
+        { status: 502 }
+      );
+    }
   }
 
   // 3. Save Media record
