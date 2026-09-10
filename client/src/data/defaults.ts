@@ -179,16 +179,15 @@ export function createDefaultModule(type: ModuleType, position: number, recipien
         type,
         position,
         enabled: true,
-        title: 'Personal Soundtrack',
-        subtitle: 'Ambient melodies accompanying the journey',
+        title: 'Voice Note From My Heart',
+        subtitle: 'Hear my voice or favorite song wishing you joy',
         content: {
-          trackTitle: 'Golden Hour Birthday Symphony',
-          artist: 'DearYou Ambient Ensemble',
+          title: `Voice Note For ${recipientName}`,
+          senderName: 'With warmth',
           audioUrl: '',
-          ambientPreset: 'piano_lullaby',
-          autoplay: false,
-          loop: true,
-          volume: 0.6,
+          durationSeconds: '0:45',
+          playAsBackground: true,
+          recordedDate: 'Today',
         },
       };
 
@@ -199,15 +198,15 @@ export function createDefaultModule(type: ModuleType, position: number, recipien
         type,
         position,
         enabled: true,
-        title: 'Voice Note From My Heart',
-        subtitle: 'Hear my actual voice wishing you joy',
+        title: 'Live Voice Recording',
+        subtitle: 'Recorded live directly in the browser',
         content: {
-          title: `A Voice Wish for ${recipientName}`,
-          senderName: 'With warmth',
+          title: `A Live Voice Wish for ${recipientName} 🎙`,
+          senderName: 'With love',
           audioUrl: '',
-          durationSeconds: 42,
-          transcription: '“Hey! I wanted you to hear this directly in my voice: Happy Birthday! I hope today treats you with the exact same tenderness you always give others.”',
-          recordedDate: 'Today',
+          durationSeconds: '0:30',
+          transcription: '“Happy Birthday! I hope this year brings you everything you have been dreaming of.”',
+          recordedDate: 'Just now',
         },
       };
 
@@ -300,38 +299,6 @@ export function createDefaultModule(type: ModuleType, position: number, recipien
               emoji: '🍳',
             },
           ],
-        },
-      };
-
-    case 'MINI_GAME':
-      return {
-        _id: id,
-        experienceId: '',
-        type,
-        position,
-        enabled: true,
-        title: 'Mini-Game Center',
-        subtitle: 'Interactive playful challenges for bonus birthday points',
-        content: {
-          gameType: 'BALLOON_POP',
-          title: 'Birthday Balloon Popper 🎈',
-          instructions: 'Pop 8 colorful birthday balloons before the time runs out to reveal your prize!',
-          targetScore: 8,
-          questions: [
-            {
-              question: `What is ${recipientName}'s undisputed superpower?`,
-              options: ['Making everyone laugh until their stomach aches', 'Finding the best snacks at 1 AM', 'Giving top-tier advice', 'All of the above!'],
-              correctIndex: 3,
-              explanation: 'Because you are truly exceptional in every category!',
-            },
-            {
-              question: 'If today was an international holiday, what would the tradition be?',
-              options: ['Nap for 3 hours', 'Eat unlimited dessert guilt-free', 'Dance in the living room', 'All of the above'],
-              correctIndex: 3,
-              explanation: 'The perfect celebration formula!',
-            },
-          ],
-          rewardMessage: '✨ Incredible! You scored 100% on the Birthday Challenge! A special memory has unlocked!',
         },
       };
 
@@ -613,10 +580,10 @@ export const TEMPLATE_PRESETS: TemplatePreset[] = [
   {
     id: 'playful_bestie',
     name: 'Playful Bestie Edition',
-    tagline: 'High-energy fun with games, inside jokes & secrets',
-    description: 'Packed with balloon popping mini-games, inside-joke vault, quiz questions, secret unlocks, and community wishes from the circle.',
+    tagline: 'High-energy fun with puzzles, inside jokes & secrets',
+    description: 'Packed with interactive photo puzzles, inside-joke vault, quiz questions, secret unlocks, and community wishes from the circle.',
     theme: 'champagne_celebration',
-    modules: ['CINEMATIC_OPENING', 'BIRTHDAY_REVEAL', 'INSIDE_JOKES', 'MINI_GAME', 'SECRET', 'GIFT', 'PEOPLE', 'FINAL_REVEAL'],
+    modules: ['CINEMATIC_OPENING', 'BIRTHDAY_REVEAL', 'INSIDE_JOKES', 'SECRET', 'GIFT', 'PEOPLE', 'FINAL_REVEAL'],
   },
   {
     id: 'scrapbook_nostalgia',

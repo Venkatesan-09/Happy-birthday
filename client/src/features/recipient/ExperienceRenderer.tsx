@@ -42,14 +42,14 @@ export const ExperienceRenderer: React.FC<ExperienceRendererProps> = ({
   const [isAudioMuted, setIsAudioMuted] = useState(false);
   const modules = experience.modules || [];
 
-  // Resolve background MP3 audio URL: from experience.settings.backgroundMusicUrl OR from VOICE module
-  const voiceModule = modules.find(
-    (m) => m.type === 'VOICE' && m.enabled && (m.content as any)?.audioUrl
+  // Resolve background MP3 audio URL: from experience.settings.backgroundMusicUrl OR from MUSIC (Voice Note) OR VOICE module
+  const audioNoteModule = modules.find(
+    (m) => (m.type === 'MUSIC' || m.type === 'VOICE' || (m.type as any) === 'voice') && m.enabled && (m.content as any)?.audioUrl
   );
   const rawBgAudio =
     (experience.settings as any)?.backgroundMusicUrl ||
-    ((voiceModule?.content as any)?.playAsBackground !== false ? (voiceModule?.content as any)?.audioUrl : null) ||
-    (voiceModule?.content as any)?.audioUrl;
+    ((audioNoteModule?.content as any)?.playAsBackground !== false ? (audioNoteModule?.content as any)?.audioUrl : null) ||
+    (audioNoteModule?.content as any)?.audioUrl;
   const backgroundAudioUrl = rawBgAudio ? getMediaUrl(rawBgAudio) : null;
 
   const bgAudioRef = React.useRef<HTMLAudioElement | null>(null);
@@ -235,9 +235,6 @@ function renderModule(
 
     case 'INSIDE_JOKES':
       return <InsideJokesModule content={content} />;
-
-    case 'MINI_GAME':
-      return <MiniGames content={content} onComplete={() => onComplete(mod._id, mod.type)} />;
 
     case 'PUZZLE':
       return <MiniGames content={{ ...content, gameType: 'PUZZLE' }} onComplete={() => onComplete(mod._id, mod.type)} />;
@@ -503,8 +500,8 @@ const MusicModule: React.FC<{ content: any }> = ({ content }) => {
             {playing ? <Pause className="w-5 h-5 fill-current" /> : <Play className="w-5 h-5 fill-current ml-0.5" />}
           </button>
           <div>
-            <h4 className="font-playfair font-bold text-stone-900">{content.trackTitle || 'Soundtrack'}</h4>
-            <p className="text-xs text-stone-500">{content.artist || 'DearYou Acoustics'}</p>
+            <h4 className="font-playfair font-bold text-stone-900">{content.title || content.trackTitle || 'Voice Note From My Heart'}</h4>
+            <p className="text-xs text-stone-500">{content.senderName ? `From ${content.senderName}` : (content.artist || 'Special Voice Wish')}</p>
           </div>
         </div>
         <span className="text-xs px-3 py-1 rounded-full bg-amber-100 text-amber-800 font-medium">

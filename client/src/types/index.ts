@@ -58,7 +58,6 @@ export type ModuleType =
   | 'VIDEO'
   | 'THINGS_NEVER_SAID'
   | 'INSIDE_JOKES'
-  | 'MINI_GAME'
   | 'SECRET'
   | 'UNIVERSE'
   | 'GIFT'
