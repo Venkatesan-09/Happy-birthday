@@ -64,11 +64,27 @@ export const ExperienceBuilder: React.FC<ExperienceBuilderProps> = ({
   const [isVersionsOpen, setIsVersionsOpen] = useState(false);
   const [isPublishing, setIsPublishing] = useState(false);
   const [saveStatus, setSaveStatus] = useState<string>('Saved');
+  const [settingsRecipient, setSettingsRecipient] = useState({
+    name: '',
+    nickname: '',
+    relationship: 'Best Friend',
+    birthday: '',
+  });
+  const [settingsFeedback, setSettingsFeedback] = useState<string | null>(null);
+  const [isSavingSettings, setIsSavingSettings] = useState(false);
 
   const loadExperience = async () => {
     try {
       const data = await api.experiences.get(experienceId);
       setExperience(data);
+      if (data?.recipient) {
+        setSettingsRecipient({
+          name: data.recipient.name || '',
+          nickname: data.recipient.nickname || '',
+          relationship: data.recipient.relationship || 'Best Friend',
+          birthday: data.recipient.birthday || '',
+        });
+      }
       if (data.modules && data.modules.length > 0 && !selectedModuleId) {
         setSelectedModuleId(data.modules[0]._id);
       }
@@ -353,66 +369,185 @@ export const ExperienceBuilder: React.FC<ExperienceBuilderProps> = ({
 
       {activeTab === 'settings' && (
         <div className="flex-1 overflow-y-auto p-4 sm:p-6">
-          <div className="max-w-2xl mx-auto w-full text-left space-y-6 pb-10">
-          <div className="p-5 sm:p-6 rounded-3xl bg-[#fffdfa] border border-stone-200 shadow-xs space-y-4">
-            <h3 className="font-playfair font-bold text-lg text-stone-900">Experience Settings</h3>
+          <div className="max-w-2xl mx-auto w-full text-left space-y-6 pb-12">
+            <div className="p-5 sm:p-6 rounded-3xl bg-[#fffdfa] border border-stone-200 shadow-sm space-y-6">
+              <div className="flex items-center justify-between border-b border-stone-100 pb-4">
+                <div>
+                  <h3 className="font-playfair font-bold text-lg sm:text-xl text-stone-900">Experience Settings</h3>
+                  <p className="text-xs text-stone-500 mt-0.5">Customize theme styling and recipient journey info.</p>
+                </div>
+                {settingsFeedback && (
+                  <span className="text-xs font-semibold px-2.5 py-1 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200">
+                    {settingsFeedback}
+                  </span>
+                )}
+              </div>
 
-            <div>
-              <label className="text-xs font-bold text-stone-700 uppercase">Theme Palette</label>
-              <div className="grid grid-cols-2 gap-2 mt-2">
-                {Object.entries(DEFAULT_THEMES).map(([key, t]) => (
+              {/* Theme Palette */}
+              <div>
+                <div className="flex items-center justify-between mb-2">
+                  <label className="text-xs font-bold text-stone-700 uppercase tracking-wider flex items-center gap-1.5">
+                    <Palette className="w-3.5 h-3.5 text-amber-700" />
+                    Theme Palette
+                  </label>
+                  <span className="text-[11px] text-stone-400">
+                    Active: <strong className="text-stone-700">{experience.theme?.name || 'Warm Vintage Scrapbook'}</strong>
+                  </span>
+                </div>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 mt-2">
+                  {Object.entries(DEFAULT_THEMES).map(([key, t]) => {
+                    const isSelected = experience.theme?.name === t.name;
+                    return (
+                      <button
+                        key={key}
+                        type="button"
+                        onClick={async () => {
+                          // Optimistically update UI immediately
+                          setExperience((prev) => (prev ? { ...prev, theme: t } : prev));
+                          setSettingsFeedback('Saving theme...');
+                          try {
+                            await api.experiences.update(experience._id, { theme: t });
+                            setSettingsFeedback('Theme saved ✓');
+                            setTimeout(() => setSettingsFeedback(null), 3000);
+                          } catch (err: any) {
+                            console.error('Failed to update theme:', err);
+                            setSettingsFeedback('Failed to save theme');
+                            loadExperience();
+                          }
+                        }}
+                        className={`p-3.5 rounded-2xl border text-xs text-left cursor-pointer transition-all touch-manipulation flex items-center justify-between ${
+                          isSelected
+                            ? 'border-amber-600 bg-amber-50/80 font-bold shadow-xs'
+                            : 'border-stone-200 bg-white hover:border-amber-300 hover:bg-stone-50/50'
+                        }`}
+                      >
+                        <div className="flex items-center gap-2.5 min-w-0">
+                          <div
+                            className="w-5 h-5 rounded-full flex-shrink-0 shadow-sm border border-black/10"
+                            style={{ backgroundColor: t.primaryColor }}
+                          />
+                          <span className="truncate text-stone-800">{t.name}</span>
+                        </div>
+                        {isSelected && (
+                          <span className="text-[11px] font-bold text-amber-700 flex items-center gap-1 flex-shrink-0">
+                            <CheckCircle2 className="w-3.5 h-3.5" />
+                            Active
+                          </span>
+                        )}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+
+              {/* Recipient Details */}
+              <div className="pt-5 border-t border-stone-200/80 space-y-4">
+                <div className="flex items-center justify-between">
+                  <label className="text-xs font-bold text-stone-700 uppercase tracking-wider flex items-center gap-1.5">
+                    <Heart className="w-3.5 h-3.5 text-rose-600" />
+                    Recipient Details
+                  </label>
                   <button
-                    key={key}
                     type="button"
+                    disabled={isSavingSettings}
                     onClick={async () => {
-                      await api.experiences.update(experience._id, { theme: t });
-                      loadExperience();
+                      setIsSavingSettings(true);
+                      setSettingsFeedback('Saving...');
+                      try {
+                        const nextRec = {
+                          name: settingsRecipient.name.trim() || experience.recipient?.name || 'Birthday Star',
+                          nickname: settingsRecipient.nickname.trim(),
+                          relationship: settingsRecipient.relationship || 'Best Friend',
+                          birthday: settingsRecipient.birthday,
+                        };
+                        await api.experiences.update(experience._id, { recipient: nextRec as any });
+                        setExperience((prev) => (prev ? { ...prev, recipient: nextRec as any } : prev));
+                        setSettingsFeedback('Saved ✓');
+                        setTimeout(() => setSettingsFeedback(null), 3000);
+                      } catch (err: any) {
+                        console.error('Failed to update recipient details:', err);
+                        setSettingsFeedback('Save failed');
+                      } finally {
+                        setIsSavingSettings(false);
+                      }
                     }}
-                    className={`p-3 rounded-xl border text-xs text-left cursor-pointer transition touch-manipulation ${
-                      experience.theme?.name === t.name
-                        ? 'border-amber-600 bg-amber-50/70 font-semibold'
-                        : 'border-stone-200 hover:border-amber-300 active:bg-amber-50'
-                    }`}
+                    className="px-3 py-1.5 rounded-xl bg-amber-700 hover:bg-amber-800 active:bg-amber-900 text-white text-xs font-semibold flex items-center gap-1.5 transition cursor-pointer shadow-xs disabled:opacity-50"
                   >
-                    <div className="flex items-center gap-2">
-                      <div className="w-5 h-5 rounded-full flex-shrink-0 shadow-sm" style={{ backgroundColor: t.primaryColor }} />
-                      <span className="leading-tight">{t.name}</span>
-                    </div>
-                    {experience.theme?.name === t.name && (
-                      <span className="text-[10px] text-amber-700 font-bold mt-1 block">✓ Active</span>
-                    )}
+                    <Save className="w-3.5 h-3.5" />
+                    <span>{isSavingSettings ? 'Saving...' : 'Save Changes'}</span>
                   </button>
-                ))}
-              </div>
-            </div>
+                </div>
 
-            <div className="pt-4 border-t border-stone-200">
-              <label className="text-xs font-bold text-stone-700 uppercase">Recipient Details</label>
-              <div className="grid grid-cols-2 gap-3 mt-2">
-                <input
-                  type="text"
-                  value={experience.recipient?.name || ''}
-                  onChange={async (e) => {
-                    const nextRec = { ...experience.recipient, name: e.target.value };
-                    await api.experiences.update(experience._id, { recipient: nextRec });
-                    setExperience({ ...experience, recipient: nextRec });
-                  }}
-                  placeholder="Recipient Name"
-                  className="px-3 py-2 rounded-xl border border-stone-300 text-xs bg-white text-stone-800"
-                />
-                <input
-                  type="date"
-                  value={experience.recipient?.birthday || ''}
-                  onChange={async (e) => {
-                    const nextRec = { ...experience.recipient, birthday: e.target.value };
-                    await api.experiences.update(experience._id, { recipient: nextRec });
-                    setExperience({ ...experience, recipient: nextRec });
-                  }}
-                  className="px-3 py-2 rounded-xl border border-stone-300 text-xs bg-white text-stone-800"
-                />
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
+                  <div>
+                    <label className="text-[11px] font-semibold text-stone-600 mb-1 block">Full Name</label>
+                    <input
+                      type="text"
+                      value={settingsRecipient.name}
+                      onChange={(e) => setSettingsRecipient((prev) => ({ ...prev, name: e.target.value }))}
+                      onBlur={async () => {
+                        if (settingsRecipient.name.trim() && settingsRecipient.name !== experience.recipient?.name) {
+                          try {
+                            const nextRec = { ...experience.recipient, name: settingsRecipient.name.trim() };
+                            await api.experiences.update(experience._id, { recipient: nextRec });
+                            setExperience((prev) => (prev ? { ...prev, recipient: nextRec } : prev));
+                            setSettingsFeedback('Saved name ✓');
+                            setTimeout(() => setSettingsFeedback(null), 2500);
+                          } catch (e) {
+                            console.error(e);
+                          }
+                        }
+                      }}
+                      placeholder="Recipient Full Name"
+                      className="w-full px-3 py-2.5 rounded-xl border border-stone-300 text-xs bg-white text-stone-800 focus:outline-none focus:ring-2 focus:ring-amber-500/20 focus:border-amber-500"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="text-[11px] font-semibold text-stone-600 mb-1 block">Nickname (Optional)</label>
+                    <input
+                      type="text"
+                      value={settingsRecipient.nickname}
+                      onChange={(e) => setSettingsRecipient((prev) => ({ ...prev, nickname: e.target.value }))}
+                      placeholder="e.g. Shalini, Shalu"
+                      className="w-full px-3 py-2.5 rounded-xl border border-stone-300 text-xs bg-white text-stone-800 focus:outline-none focus:ring-2 focus:ring-amber-500/20 focus:border-amber-500"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="text-[11px] font-semibold text-stone-600 mb-1 block">Relationship</label>
+                    <select
+                      value={settingsRecipient.relationship}
+                      onChange={(e) => setSettingsRecipient((prev) => ({ ...prev, relationship: e.target.value }))}
+                      className="w-full px-3 py-2.5 rounded-xl border border-stone-300 text-xs bg-white text-stone-800 focus:outline-none focus:ring-2 focus:ring-amber-500/20 focus:border-amber-500"
+                    >
+                      <option value="Best Friend">Best Friend</option>
+                      <option value="Friend">Friend</option>
+                      <option value="Partner">Partner</option>
+                      <option value="Parent">Parent</option>
+                      <option value="Mother">Mother</option>
+                      <option value="Father">Father</option>
+                      <option value="Sibling">Sibling</option>
+                      <option value="Cousin">Cousin</option>
+                      <option value="Classmate">Classmate</option>
+                      <option value="Colleague">Colleague</option>
+                      <option value="Family Member">Family Member</option>
+                      <option value="Other">Other</option>
+                    </select>
+                  </div>
+
+                  <div>
+                    <label className="text-[11px] font-semibold text-stone-600 mb-1 block">Birthday Date</label>
+                    <input
+                      type="date"
+                      value={settingsRecipient.birthday}
+                      onChange={(e) => setSettingsRecipient((prev) => ({ ...prev, birthday: e.target.value }))}
+                      className="w-full px-3 py-2.5 rounded-xl border border-stone-300 text-xs bg-white text-stone-800 focus:outline-none focus:ring-2 focus:ring-amber-500/20 focus:border-amber-500"
+                    />
+                  </div>
+                </div>
               </div>
             </div>
-          </div>
           </div>
         </div>
       )}
