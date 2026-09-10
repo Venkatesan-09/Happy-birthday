@@ -1,3 +1,5 @@
+import fs from 'fs';
+import path from 'path';
 import mongoose from 'mongoose';
 import { Media, IMedia } from '../models/Media';
 import { Experience } from '../models/Experience';
@@ -9,6 +11,22 @@ import {
 } from './cloudinary/cloudinary.service';
 import { inferMediaType, toCloudinaryResourceType } from '../middleware/upload.middleware';
 import { hashToken } from '../utils';
+
+// Helper to save uploaded file locally if Cloudinary is unavailable or returns 403
+function saveLocalMedia(file: Express.Multer.File): { url: string; publicId: string } {
+  const uploadsDir = path.join(process.cwd(), 'uploads');
+  if (!fs.existsSync(uploadsDir)) {
+    fs.mkdirSync(uploadsDir, { recursive: true });
+  }
+  const ext = path.extname(file.originalname) || '';
+  const filename = `${Date.now()}-${Math.random().toString(36).substring(2, 8)}${ext}`;
+  const filePath = path.join(uploadsDir, filename);
+  fs.writeFileSync(filePath, file.buffer);
+  return {
+    url: `/uploads/${filename}`,
+    publicId: filename,
+  };
+}
 
 // ── Types ──────────────────────────────────────────────────────────────────
 
@@ -64,7 +82,7 @@ export async function creatorUpload(input: CreatorUploadInput): Promise<IMedia> 
   const mediaType = inferMediaType(file.mimetype);
   const cloudinaryResourceType = toCloudinaryResourceType(mediaType);
 
-  let result: CloudinaryUploadResult;
+  let result: CloudinaryUploadResult | null = null;
   try {
     // 3. Upload to Cloudinary
     // Timeout: 90s — videos up to 100 MB need time on Render's free tier.
@@ -80,10 +98,17 @@ export async function creatorUpload(input: CreatorUploadInput): Promise<IMedia> 
     );
     result = await Promise.race([uploadPromise, timeoutPromise]);
   } catch (cloudErr: any) {
-    throw Object.assign(
-      new Error(`Media upload to Cloudinary failed: ${cloudErr.message}`),
-      { status: 502 }
-    );
+    console.warn(`[MediaService] Cloudinary upload failed (${cloudErr.message}). Storing locally as fallback.`);
+    // Fallback: store locally on server
+    const local = saveLocalMedia(file);
+    result = {
+      publicId: local.publicId,
+      resourceType: cloudinaryResourceType,
+      secureUrl: local.url,
+      url: local.url,
+      format: path.extname(file.originalname).replace(/^\./, '') || 'bin',
+      bytes: file.size,
+    };
   }
 
   // 4. Save Media record in MongoDB
@@ -144,7 +169,7 @@ export async function contributorUpload(input: ContributorUploadInput): Promise<
   const mediaType = inferMediaType(file.mimetype);
   const cloudinaryResourceType = toCloudinaryResourceType(mediaType);
 
-  let result: CloudinaryUploadResult;
+  let result: CloudinaryUploadResult | null = null;
   try {
     // 2b. Upload to Cloudinary with 90s timeout
     const folder = buildCloudinaryFolder(experienceId, `contributors/${mediaType}`);
@@ -159,10 +184,16 @@ export async function contributorUpload(input: ContributorUploadInput): Promise<
     );
     result = await Promise.race([uploadPromise, timeoutPromise]);
   } catch (cloudErr: any) {
-    throw Object.assign(
-      new Error(`Media upload to Cloudinary failed: ${cloudErr.message}`),
-      { status: 502 }
-    );
+    console.warn(`[MediaService] Contributor Cloudinary upload failed (${cloudErr.message}). Storing locally as fallback.`);
+    const local = saveLocalMedia(file);
+    result = {
+      publicId: local.publicId,
+      resourceType: cloudinaryResourceType,
+      secureUrl: local.url,
+      url: local.url,
+      format: path.extname(file.originalname).replace(/^\./, '') || 'bin',
+      bytes: file.size,
+    };
   }
 
   // 3. Save Media record
