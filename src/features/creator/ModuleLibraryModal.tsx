@@ -96,14 +96,6 @@ const MODULE_CATALOG: ModuleMeta[] = [
     icon: Puzzle,
   },
   {
-    type: 'MINI_GAME',
-    title: 'Mini-Game Center',
-    category: 'Playful',
-    description: 'Balloon pop, memory match cards, trivia quiz, or heart catching games.',
-    icon: Gamepad2,
-    badge: 'Gamified',
-  },
-  {
     type: 'INSIDE_JOKES',
     title: 'Inside-Joke Archive',
     category: 'Playful',
@@ -126,17 +118,18 @@ const MODULE_CATALOG: ModuleMeta[] = [
   },
   {
     type: 'MUSIC',
-    title: 'Soundtrack & Ambient Track',
+    title: 'Voice Note From My Heart (Upload)',
     category: 'Multimedia',
-    description: 'Gentle acoustic, piano, or lofi sound loop to accompany the experience.',
+    description: 'Upload an MP3 voice message or song that plays as a heartfelt audio card for the recipient.',
     icon: Music,
   },
   {
     type: 'VOICE',
-    title: 'Heartfelt Voice Note',
+    title: 'Live Voice Recording',
     category: 'Multimedia',
-    description: 'Playable audio greeting with animated waveform and transcription.',
+    description: 'Record your voice live in the browser and send it directly to the recipient as a personal audio message.',
     icon: Mic,
+    badge: 'Live',
   },
   {
     type: 'VIDEO',

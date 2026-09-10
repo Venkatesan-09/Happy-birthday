@@ -16,26 +16,18 @@ import {
   Wand2,
   CheckCircle2,
   AlertCircle,
-  Save,
-  Palette,
   Settings,
   Upload,
-  Gamepad2,
-  Trophy,
-  HelpCircle,
-  HeartHandshake,
   Puzzle,
-  Menu,
   MapPin,
   Star,
-  Image,
-  Heart,
   Globe,
   BookOpen,
   Music2,
   Mic,
   Video,
-  Link,
+  Pause,
+  Play,
 } from 'lucide-react';
 import { Experience, ExperienceModule, ModuleType } from '../../types';
 import { api } from '../../services/api';
@@ -360,8 +352,9 @@ export const ExperienceBuilder: React.FC<ExperienceBuilderProps> = ({
       )}
 
       {activeTab === 'settings' && (
-        <div className="flex-1 p-6 max-w-2xl mx-auto w-full text-left space-y-6">
-          <div className="p-6 rounded-3xl bg-[#fffdfa] border border-stone-200 shadow-xs space-y-4">
+        <div className="flex-1 overflow-y-auto p-4 sm:p-6">
+          <div className="max-w-2xl mx-auto w-full text-left space-y-6 pb-10">
+          <div className="p-5 sm:p-6 rounded-3xl bg-[#fffdfa] border border-stone-200 shadow-xs space-y-4">
             <h3 className="font-playfair font-bold text-lg text-stone-900">Experience Settings</h3>
 
             <div>
@@ -370,20 +363,24 @@ export const ExperienceBuilder: React.FC<ExperienceBuilderProps> = ({
                 {Object.entries(DEFAULT_THEMES).map(([key, t]) => (
                   <button
                     key={key}
+                    type="button"
                     onClick={async () => {
                       await api.experiences.update(experience._id, { theme: t });
                       loadExperience();
                     }}
-                    className={`p-3 rounded-xl border text-xs text-left cursor-pointer transition ${
+                    className={`p-3 rounded-xl border text-xs text-left cursor-pointer transition touch-manipulation ${
                       experience.theme?.name === t.name
                         ? 'border-amber-600 bg-amber-50/70 font-semibold'
-                        : 'border-stone-200 hover:border-amber-300'
+                        : 'border-stone-200 hover:border-amber-300 active:bg-amber-50'
                     }`}
                   >
                     <div className="flex items-center gap-2">
-                      <div className="w-4 h-4 rounded-full" style={{ backgroundColor: t.primaryColor }} />
-                      <span>{t.name}</span>
+                      <div className="w-5 h-5 rounded-full flex-shrink-0 shadow-sm" style={{ backgroundColor: t.primaryColor }} />
+                      <span className="leading-tight">{t.name}</span>
                     </div>
+                    {experience.theme?.name === t.name && (
+                      <span className="text-[10px] text-amber-700 font-bold mt-1 block">✓ Active</span>
+                    )}
                   </button>
                 ))}
               </div>
@@ -415,6 +412,7 @@ export const ExperienceBuilder: React.FC<ExperienceBuilderProps> = ({
                 />
               </div>
             </div>
+          </div>
           </div>
         </div>
       )}
@@ -454,16 +452,18 @@ export const ExperienceBuilder: React.FC<ExperienceBuilderProps> = ({
                       <span className="truncate">{m.title || m.type}</span>
                     </div>
 
-                    <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                    {/* Reorder + delete controls — always visible on touch, hover on desktop */}
+                    <div className="flex items-center gap-1 opacity-100 md:opacity-0 md:group-hover:opacity-100 transition-opacity">
                       <button
                         onClick={(e) => {
                           e.stopPropagation();
                           handleMoveModule(m._id, 'up');
                         }}
                         disabled={idx === 0}
-                        className="p-1 text-stone-400 hover:text-stone-700 disabled:opacity-20 cursor-pointer"
+                        className="p-1.5 md:p-1 text-stone-400 hover:text-stone-700 disabled:opacity-20 cursor-pointer touch-manipulation"
+                        title="Move Up"
                       >
-                        <ChevronUp className="w-3 h-3" />
+                        <ChevronUp className="w-3.5 h-3.5 md:w-3 md:h-3" />
                       </button>
                       <button
                         onClick={(e) => {
@@ -471,18 +471,20 @@ export const ExperienceBuilder: React.FC<ExperienceBuilderProps> = ({
                           handleMoveModule(m._id, 'down');
                         }}
                         disabled={idx === modules.length - 1}
-                        className="p-1 text-stone-400 hover:text-stone-700 disabled:opacity-20 cursor-pointer"
+                        className="p-1.5 md:p-1 text-stone-400 hover:text-stone-700 disabled:opacity-20 cursor-pointer touch-manipulation"
+                        title="Move Down"
                       >
-                        <ChevronDown className="w-3 h-3" />
+                        <ChevronDown className="w-3.5 h-3.5 md:w-3 md:h-3" />
                       </button>
                       <button
                         onClick={(e) => {
                           e.stopPropagation();
                           handleDeleteModule(m._id);
                         }}
-                        className="p-1 text-stone-400 hover:text-rose-600 cursor-pointer"
+                        className="p-1.5 md:p-1 text-stone-400 hover:text-rose-600 cursor-pointer touch-manipulation"
+                        title="Delete Module"
                       >
-                        <Trash2 className="w-3 h-3" />
+                        <Trash2 className="w-3.5 h-3.5 md:w-3 md:h-3" />
                       </button>
                     </div>
                   </div>
@@ -890,6 +892,271 @@ const VoiceNoteEditor: React.FC<{
             placeholder="https://example.com/my-voice-note.mp3"
             helpText="Optionally paste a direct .mp3 link if hosted elsewhere."
           />
+        </div>
+      </div>
+    </div>
+  );
+};
+
+// Live Voice Recorder — records via MediaRecorder, previews, then uploads
+const LiveVoiceRecorder: React.FC<{
+  content: any;
+  updateField: (field: string, value: any) => void;
+  experienceId: string;
+  moduleId?: string;
+}> = ({ content, updateField, experienceId, moduleId }) => {
+  const [recordingState, setRecordingState] = useState<'idle' | 'recording' | 'recorded' | 'uploading'>('idle');
+  const [recordingSeconds, setRecordingSeconds] = useState(0);
+  const [uploadProgress, setUploadProgress] = useState(0);
+  const [uploadError, setUploadError] = useState('');
+  const [localBlobUrl, setLocalBlobUrl] = useState<string | null>(null);
+  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
+  const chunksRef = useRef<Blob[]>([]);
+  const timerRef = useRef<any>(null);
+  const recordedBlobRef = useRef<Blob | null>(null);
+
+  const formatTime = (sec: number) => {
+    const m = Math.floor(sec / 60);
+    const s = sec % 60;
+    return `${m}:${s < 10 ? '0' : ''}${s}`;
+  };
+
+  const startRecording = async () => {
+    setUploadError('');
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      const mr = new MediaRecorder(stream, { mimeType: 'audio/webm;codecs=opus' });
+      chunksRef.current = [];
+      mr.ondataavailable = (e) => { if (e.data.size > 0) chunksRef.current.push(e.data); };
+      mr.onstop = () => {
+        const blob = new Blob(chunksRef.current, { type: 'audio/webm' });
+        recordedBlobRef.current = blob;
+        const url = URL.createObjectURL(blob);
+        setLocalBlobUrl(url);
+        setRecordingState('recorded');
+        stream.getTracks().forEach((t) => t.stop());
+      };
+      mr.start(250);
+      mediaRecorderRef.current = mr;
+      setRecordingState('recording');
+      setRecordingSeconds(0);
+      timerRef.current = setInterval(() => setRecordingSeconds((s) => s + 1), 1000);
+    } catch (err: any) {
+      setUploadError('Microphone access denied. Please allow mic permission and try again.');
+    }
+  };
+
+  const stopRecording = () => {
+    if (timerRef.current) clearInterval(timerRef.current);
+    mediaRecorderRef.current?.stop();
+  };
+
+  const discardRecording = () => {
+    if (localBlobUrl) URL.revokeObjectURL(localBlobUrl);
+    setLocalBlobUrl(null);
+    recordedBlobRef.current = null;
+    setRecordingState('idle');
+    setRecordingSeconds(0);
+  };
+
+  const uploadRecording = async () => {
+    if (!recordedBlobRef.current) return;
+    setRecordingState('uploading');
+    setUploadProgress(0);
+    try {
+      const file = new File([recordedBlobRef.current], `live-recording-${Date.now()}.webm`, { type: 'audio/webm' });
+      const result: any = await api.media.uploadFile(file, experienceId, {
+        moduleId,
+        onProgress: (pct) => setUploadProgress(pct),
+      });
+      const audioUrl = result?.cloudinary?.secureUrl || result?.secureUrl || result?.url || '';
+      if (audioUrl) {
+        updateField('audioUrl', audioUrl);
+        updateField('durationSeconds', formatTime(recordingSeconds));
+        updateField('recordedDate', 'Just recorded');
+      }
+      if (localBlobUrl) URL.revokeObjectURL(localBlobUrl);
+      setLocalBlobUrl(null);
+      recordedBlobRef.current = null;
+      setRecordingState('idle');
+    } catch (err: any) {
+      setUploadError(err.message || 'Upload failed. Please try again.');
+      setRecordingState('recorded');
+    }
+  };
+
+  useEffect(() => {
+    return () => {
+      if (timerRef.current) clearInterval(timerRef.current);
+      if (localBlobUrl) URL.revokeObjectURL(localBlobUrl);
+    };
+  }, []);
+
+  return (
+    <div className="space-y-5">
+      <div className="p-5 rounded-2xl bg-gradient-to-br from-fuchsia-50/80 via-[#fffdfa] to-rose-50/60 border border-fuchsia-200 shadow-xs space-y-4">
+        <div className="flex items-center justify-between">
+          <h4 className="text-xs font-bold text-stone-800 uppercase tracking-wider flex items-center gap-2">
+            <Mic className="w-4 h-4 text-fuchsia-600" />
+            <span>Live Voice Recording</span>
+          </h4>
+          <span className="text-[10px] font-semibold text-fuchsia-700 bg-fuchsia-100/70 border border-fuchsia-200 px-2 py-0.5 rounded-full">
+            🔴 Record Live
+          </span>
+        </div>
+        <p className="text-xs text-stone-500">
+          Record your voice directly in the browser. Hit record, speak your birthday wish, then upload it to your experience.
+        </p>
+
+        {/* Recording Controls */}
+        <div className="p-4 rounded-xl bg-white border-2 border-dashed border-fuchsia-300 space-y-3">
+          {recordingState === 'idle' && (
+            <div className="flex flex-col items-center gap-3 py-2">
+              <div className="w-16 h-16 rounded-full bg-fuchsia-50 border-2 border-fuchsia-200 flex items-center justify-center">
+                <Mic className="w-7 h-7 text-fuchsia-400" />
+              </div>
+              <p className="text-xs text-stone-500 text-center">Tap the button below to start recording your voice</p>
+              <button
+                type="button"
+                onClick={startRecording}
+                className="px-6 py-2.5 rounded-xl bg-fuchsia-600 text-white font-semibold text-xs hover:bg-fuchsia-700 shadow-sm flex items-center gap-2 cursor-pointer transition"
+              >
+                <Mic className="w-3.5 h-3.5" />
+                <span>Start Recording</span>
+              </button>
+            </div>
+          )}
+
+          {recordingState === 'recording' && (
+            <div className="flex flex-col items-center gap-3 py-2">
+              {/* Pulsing recording indicator */}
+              <div className="relative flex items-center justify-center">
+                <div className="w-16 h-16 rounded-full bg-rose-500 flex items-center justify-center animate-pulse shadow-lg shadow-rose-300">
+                  <Mic className="w-7 h-7 text-white" />
+                </div>
+                <div className="absolute -top-1 -right-1 w-5 h-5 rounded-full bg-red-600 flex items-center justify-center">
+                  <div className="w-2.5 h-2.5 rounded-full bg-white animate-pulse" />
+                </div>
+              </div>
+              {/* Animated bars */}
+              <div className="flex items-end gap-0.5 h-8">
+                {Array.from({ length: 12 }).map((_, i) => (
+                  <div
+                    key={i}
+                    className="w-1.5 bg-fuchsia-500 rounded-full animate-pulse"
+                    style={{
+                      height: `${20 + Math.sin(i * 1.2) * 14}px`,
+                      animationDelay: `${i * 0.08}s`,
+                    }}
+                  />
+                ))}
+              </div>
+              <p className="text-sm font-bold text-rose-700 font-mono">{formatTime(recordingSeconds)}</p>
+              <button
+                type="button"
+                onClick={stopRecording}
+                className="px-6 py-2.5 rounded-xl bg-rose-600 text-white font-semibold text-xs hover:bg-rose-700 shadow-sm flex items-center gap-2 cursor-pointer transition"
+              >
+                <div className="w-3 h-3 bg-white rounded-sm" />
+                <span>Stop Recording</span>
+              </button>
+            </div>
+          )}
+
+          {recordingState === 'recorded' && localBlobUrl && (
+            <div className="space-y-3">
+              <div className="flex items-center gap-2">
+                <CheckCircle2 className="w-4 h-4 text-emerald-600 flex-shrink-0" />
+                <span className="text-xs font-bold text-stone-800">Recording complete — {formatTime(recordingSeconds)}</span>
+              </div>
+              <audio src={localBlobUrl} controls className="w-full h-9" />
+              <div className="flex gap-2">
+                <button
+                  type="button"
+                  onClick={discardRecording}
+                  className="flex-1 px-3 py-2 rounded-xl border border-stone-300 text-stone-700 text-xs font-semibold hover:bg-stone-50 cursor-pointer transition"
+                >
+                  🗑 Discard & Re-record
+                </button>
+                <button
+                  type="button"
+                  onClick={uploadRecording}
+                  className="flex-1 px-3 py-2 rounded-xl bg-fuchsia-600 text-white text-xs font-semibold hover:bg-fuchsia-700 shadow-xs flex items-center justify-center gap-1.5 cursor-pointer transition"
+                >
+                  <Upload className="w-3.5 h-3.5" />
+                  <span>Upload Recording</span>
+                </button>
+              </div>
+            </div>
+          )}
+
+          {recordingState === 'uploading' && (
+            <div className="py-4 text-center space-y-2">
+              <div className="w-8 h-8 mx-auto border-3 border-fuchsia-200 border-t-fuchsia-600 rounded-full animate-spin" />
+              <p className="text-xs font-semibold text-fuchsia-800">Uploading Recording ({uploadProgress}%)...</p>
+              <div className="w-48 max-w-full mx-auto h-2 bg-fuchsia-100 rounded-full overflow-hidden">
+                <div className="h-full bg-fuchsia-600 transition-all duration-300" style={{ width: `${uploadProgress}%` }} />
+              </div>
+            </div>
+          )}
+
+          {uploadError && (
+            <div className="mt-2 p-2 bg-rose-50 border border-rose-200 rounded-lg text-xs text-rose-700 flex items-center gap-2">
+              <AlertCircle className="w-3.5 h-3.5 flex-shrink-0" />
+              <span>{uploadError}</span>
+            </div>
+          )}
+        </div>
+
+        {/* Uploaded Audio Preview */}
+        {content.audioUrl && (
+          <div className="p-3.5 rounded-xl bg-fuchsia-50/80 border border-fuchsia-200 space-y-2">
+            <span className="text-xs font-bold text-stone-800 flex items-center gap-1.5">
+              <CheckCircle2 className="w-4 h-4 text-emerald-600" />
+              Live Recording Uploaded Successfully
+            </span>
+            <audio src={getMediaUrl(content.audioUrl)} controls className="w-full h-8 mt-1" />
+          </div>
+        )}
+
+        {/* Text Details */}
+        <div className="space-y-3">
+          <div>
+            <div className="flex items-center justify-between">
+              <label className="text-xs font-semibold text-stone-700">Card Title</label>
+              <TranslateButton value={content.title || ''} onTranslated={(t) => updateField('title', t)} />
+            </div>
+            <input
+              type="text"
+              value={content.title || ''}
+              placeholder="e.g. A Live Voice Wish For You 🎙"
+              onChange={(e) => updateField('title', e.target.value)}
+              className="w-full mt-1.5 px-3 py-2 rounded-xl border border-stone-300 text-xs bg-white text-stone-800 focus:ring-2 focus:ring-fuchsia-400 focus:outline-none"
+            />
+          </div>
+          <div>
+            <div className="flex items-center justify-between">
+              <label className="text-xs font-semibold text-stone-700">Message / Transcription</label>
+              <TranslateButton value={content.transcription || ''} onTranslated={(t) => updateField('transcription', t)} />
+            </div>
+            <textarea
+              rows={3}
+              value={content.transcription || ''}
+              placeholder="Type what you said — shown as a caption to the recipient."
+              onChange={(e) => updateField('transcription', e.target.value)}
+              className="w-full mt-1.5 p-2.5 rounded-xl border border-stone-300 text-xs bg-white text-stone-800 focus:ring-2 focus:ring-fuchsia-400 focus:outline-none leading-relaxed"
+            />
+          </div>
+          <div>
+            <label className="text-xs font-semibold text-stone-700">Sender Signature</label>
+            <input
+              type="text"
+              value={content.senderName || ''}
+              placeholder="e.g. With love, from Priya"
+              onChange={(e) => updateField('senderName', e.target.value)}
+              className="w-full mt-1 px-3 py-1.5 rounded-lg border border-stone-300 text-xs bg-white text-stone-800"
+            />
+          </div>
         </div>
       </div>
     </div>
@@ -1305,135 +1572,7 @@ const ModuleFormInspector: React.FC<{
       );
 
     case 'MUSIC':
-      return (
-        <div className="space-y-5">
-          {/* Ambient Preset Selector */}
-          <div>
-            <label className="text-xs font-bold text-stone-800 uppercase tracking-wider flex items-center gap-1.5 mb-2">
-              🎵 Ambient Sound Preset
-            </label>
-            <p className="text-xs text-stone-500 mb-3">
-              Select a built-in ambient loop or paste your own audio URL below.
-            </p>
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
-              {[
-                { id: 'piano_lullaby', label: 'Piano Lullaby', desc: 'Soft, gentle ivory keys drifting in warmth', emoji: '🎹' },
-                { id: 'acoustic_morning', label: 'Acoustic Morning', desc: 'Strumming guitar, sunlit and nostalgic', emoji: '🎸' },
-                { id: 'lofi_dreamy', label: 'Lo-fi Dreamy', desc: 'Smooth lo-fi beats with a cozy vinyl crackle', emoji: '☁️' },
-                { id: 'orchestral_cinematic', label: 'Orchestral Cinematic', desc: 'Grand strings for an epic emotional moment', emoji: '🎻' },
-                { id: 'jazz_velvet', label: 'Jazz Velvet', desc: 'Intimate jazz piano and muted trumpet', emoji: '🎷' },
-                { id: 'custom_url', label: 'Custom Audio URL', desc: 'Paste your own hosted .mp3 or .m4a link', emoji: '🔗' },
-              ].map((preset) => {
-                const isSelected = (content.ambientPreset || 'piano_lullaby') === preset.id;
-                return (
-                  <button
-                    key={preset.id}
-                    type="button"
-                    onClick={() => updateField('ambientPreset', preset.id)}
-                    className={`relative p-3 rounded-2xl border text-left transition-all cursor-pointer flex items-center gap-3 ${
-                      isSelected
-                        ? 'bg-violet-50 border-violet-400 ring-2 ring-violet-400/30 shadow-sm'
-                        : 'bg-white border-stone-200 hover:border-violet-300 hover:bg-violet-50/40 shadow-2xs'
-                    }`}
-                  >
-                    <span className="text-xl">{preset.emoji}</span>
-                    <div className="flex-1 min-w-0">
-                      <h4 className="text-xs font-bold text-stone-900 leading-tight">{preset.label}</h4>
-                      <p className="text-[10px] text-stone-500 leading-snug mt-0.5 line-clamp-2">{preset.desc}</p>
-                    </div>
-                    <div className={`w-4 h-4 rounded-full border flex-shrink-0 flex items-center justify-center transition-colors ${
-                      isSelected ? 'border-violet-600 bg-violet-600 text-white' : 'border-stone-300 bg-white'
-                    }`}>
-                      {isSelected && <CheckCircle2 className="w-3.5 h-3.5" />}
-                    </div>
-                  </button>
-                );
-              })}
-            </div>
-          </div>
-
-          {/* Custom Audio URL */}
-          <div className="p-4 rounded-2xl bg-stone-50/80 border border-stone-200/80 space-y-4">
-            <h4 className="text-xs font-bold text-stone-700 uppercase tracking-wider flex items-center gap-1.5">
-              <AlertCircle className="w-3.5 h-3.5 text-amber-600" />
-              <span>Soundtrack Details</span>
-            </h4>
-            <div>
-              <label className="text-xs font-semibold text-stone-700">Track Title</label>
-              <input
-                type="text"
-                value={content.trackTitle || ''}
-                placeholder="e.g. Golden Hour Birthday Symphony"
-                onChange={(e) => updateField('trackTitle', e.target.value)}
-                className="w-full mt-1.5 px-3 py-2 rounded-xl border border-stone-300 text-xs bg-white text-stone-800 focus:ring-2 focus:ring-violet-400 focus:outline-none"
-              />
-            </div>
-            <div>
-              <label className="text-xs font-semibold text-stone-700">Artist / Source Name</label>
-              <input
-                type="text"
-                value={content.artist || ''}
-                placeholder="e.g. DearYou Ambient Ensemble"
-                onChange={(e) => updateField('artist', e.target.value)}
-                className="w-full mt-1.5 px-3 py-2 rounded-xl border border-stone-300 text-xs bg-white text-stone-800 focus:ring-2 focus:ring-violet-400 focus:outline-none"
-              />
-            </div>
-            <MediaPickButton
-              fieldKey="audioUrl"
-              label="Custom Audio Track (Upload or Paste URL)"
-              filterType="audio"
-              currentUrl={content.audioUrl}
-              placeholder="https://example.com/birthday-song.mp3"
-              helpText="Upload an MP3/WAV/M4A file or paste a public audio URL. Leave blank to use the ambient preset."
-            />
-            <div className="grid grid-cols-2 gap-3 pt-1">
-              <label className="flex items-center gap-2.5 p-3 rounded-xl border border-stone-200 bg-white cursor-pointer hover:border-violet-300 transition">
-                <input
-                  type="checkbox"
-                  checked={content.autoplay || false}
-                  onChange={(e) => updateField('autoplay', e.target.checked)}
-                  className="w-3.5 h-3.5 accent-violet-600"
-                />
-                <div>
-                  <span className="text-xs font-semibold text-stone-800 block">Auto-play</span>
-                  <span className="text-[10px] text-stone-400">Start on page load</span>
-                </div>
-              </label>
-              <label className="flex items-center gap-2.5 p-3 rounded-xl border border-stone-200 bg-white cursor-pointer hover:border-violet-300 transition">
-                <input
-                  type="checkbox"
-                  checked={content.loop !== false}
-                  onChange={(e) => updateField('loop', e.target.checked)}
-                  className="w-3.5 h-3.5 accent-violet-600"
-                />
-                <div>
-                  <span className="text-xs font-semibold text-stone-800 block">Loop Track</span>
-                  <span className="text-[10px] text-stone-400">Repeat continuously</span>
-                </div>
-              </label>
-            </div>
-            <div>
-              <label className="text-xs font-semibold text-stone-700">Default Volume (0 – 1.0)</label>
-              <input
-                type="range"
-                min={0}
-                max={1}
-                step={0.05}
-                value={content.volume ?? 0.6}
-                onChange={(e) => updateField('volume', parseFloat(e.target.value))}
-                className="w-full mt-1.5 accent-violet-600"
-              />
-              <div className="flex justify-between text-[10px] text-stone-400 mt-0.5">
-                <span>🔇 Muted</span>
-                <span className="font-semibold text-stone-600">{Math.round((content.volume ?? 0.6) * 100)}%</span>
-                <span>🔊 Max</span>
-              </div>
-            </div>
-          </div>
-        </div>
-      );
-
-    case 'VOICE':
+      // Issue 5.1: Personal Soundtrack → now has Voice Note From My Heart upload functions
       return (
         <VoiceNoteEditor
           content={content}
@@ -1441,6 +1580,17 @@ const ModuleFormInspector: React.FC<{
           experienceId={experienceId}
           moduleId={module._id}
           MediaPickButton={MediaPickButton}
+        />
+      );
+
+    case 'VOICE':
+      // Issue 5.2: Voice Note From My Heart → now has live recording feature
+      return (
+        <LiveVoiceRecorder
+          content={content}
+          updateField={updateField}
+          experienceId={experienceId}
+          moduleId={module._id}
         />
       );
 
@@ -1509,194 +1659,6 @@ const ModuleFormInspector: React.FC<{
           </div>
         </div>
       );
-
-    case 'MINI_GAME': {
-
-      const gameOptions = [
-        {
-          id: 'BALLOON_POP',
-          name: 'Balloon Popper',
-          emoji: '🎈',
-          badge: 'Fast & Fun',
-          tagline: 'Tap colorful floating balloons before time runs out',
-          bgGradient: 'from-amber-50 to-orange-50 border-amber-200',
-          accent: 'text-amber-700',
-        },
-        {
-          id: 'MEMORY_MATCH',
-          name: 'Card Memory Match',
-          emoji: '🃏',
-          badge: 'Brain Teaser',
-          tagline: 'Flip & match pairs of cheerful birthday icons',
-          bgGradient: 'from-blue-50 to-indigo-50 border-blue-200',
-          accent: 'text-blue-700',
-        },
-        {
-          id: 'BIRTHDAY_QUIZ',
-          name: 'Birthday Trivia Quiz',
-          emoji: '❓',
-          badge: 'Personalized',
-          tagline: 'Fun questions celebrating their quirky traits & memories',
-          bgGradient: 'from-purple-50 to-pink-50 border-purple-200',
-          accent: 'text-purple-700',
-        },
-        {
-          id: 'CATCH_HEARTS',
-          name: 'Catch Falling Hearts',
-          emoji: '💖',
-          badge: 'Gentle & Sweet',
-          tagline: 'Catch shimmering love hearts drifting from the top',
-          bgGradient: 'from-rose-50 to-red-50 border-rose-200',
-          accent: 'text-rose-700',
-        },
-        {
-          id: 'PUZZLE',
-          name: 'Memory Tile Puzzle',
-          emoji: '🧩',
-          badge: 'Interactive',
-          tagline: 'Slide and swap scrambled photo tiles into place',
-          bgGradient: 'from-emerald-50 to-teal-50 border-emerald-200',
-          accent: 'text-emerald-700',
-        },
-      ];
-
-      const currentGameType = content.gameType || 'BALLOON_POP';
-
-      return (
-        <div className="space-y-6">
-          {/* Game Selection Grid Header */}
-          <div>
-            <div className="flex items-center justify-between mb-2">
-              <label className="text-xs font-bold text-stone-800 uppercase tracking-wider flex items-center gap-1.5">
-                <Gamepad2 className="w-4 h-4 text-amber-700" />
-                <span>Choose Challenge Mini-Game</span>
-              </label>
-              <span className="text-[11px] font-semibold px-2 py-0.5 rounded-full bg-amber-100 text-amber-900">
-                5 Interactive Games
-              </span>
-            </div>
-            <p className="text-xs text-stone-500 mb-3">
-              Pick the interactive game your recipient will play to unlock celebration surprises.
-            </p>
-
-            {/* Interactive Grid Cards */}
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-              {gameOptions.map((opt) => {
-                const isSelected = currentGameType === opt.id;
-                return (
-                  <button
-                    key={opt.id}
-                    type="button"
-                    onClick={() => {
-                      const patch: Record<string, any> = {
-                        gameType: opt.id,
-                        title: `${opt.name} ${opt.emoji}`,
-                        instructions: opt.tagline,
-                      };
-                      if (opt.id === 'BALLOON_POP') patch.targetScore = 8;
-                      else if (opt.id === 'CATCH_HEARTS') patch.targetScore = 10;
-                      else if (opt.id === 'MEMORY_MATCH') patch.targetScore = 6;
-                      else if (opt.id === 'BIRTHDAY_QUIZ') patch.targetScore = (content.questions?.length || 2);
-                      else if (opt.id === 'PUZZLE') patch.targetScore = 9;
-
-                      updateFields(patch);
-                    }}
-                    className={`relative p-3.5 rounded-2xl border text-left transition-all cursor-pointer flex flex-col justify-between ${
-                      isSelected
-                        ? 'bg-amber-50/90 border-amber-600 ring-2 ring-amber-500/30 shadow-sm'
-                        : 'bg-white border-stone-200 hover:border-amber-300 hover:bg-stone-50/80 shadow-2xs'
-                    }`}
-                  >
-                    <div className="flex items-start justify-between gap-2 mb-1.5">
-                      <div className="flex items-center gap-2.5">
-                        <span className="text-2xl p-1.5 rounded-xl bg-stone-100/90 shadow-2xs">
-                          {opt.emoji}
-                        </span>
-                        <div>
-                          <h4 className="text-xs font-bold text-stone-900 leading-tight">
-                            {opt.name}
-                          </h4>
-                          <span className="text-[10px] font-semibold text-stone-400">
-                            {opt.badge}
-                          </span>
-                        </div>
-                      </div>
-                      <div
-                        className={`w-4 h-4 rounded-full border flex items-center justify-center transition-colors ${
-                          isSelected
-                            ? 'border-amber-700 bg-amber-700 text-white'
-                            : 'border-stone-300 bg-white'
-                        }`}
-                      >
-                        {isSelected && <CheckCircle2 className="w-3.5 h-3.5" />}
-                      </div>
-                    </div>
-                    <p className="text-[11px] text-stone-600 mt-1 line-clamp-2 leading-relaxed">
-                      {opt.tagline}
-                    </p>
-                  </button>
-                );
-              })}
-            </div>
-          </div>
-
-          {/* Game Customization Details */}
-          <div className="p-4 rounded-2xl bg-stone-50/80 border border-stone-200/80 space-y-4">
-            <h4 className="text-xs font-bold text-stone-700 uppercase tracking-wider flex items-center gap-1.5">
-              <Sparkles className="w-3.5 h-3.5 text-amber-700" />
-              <span>Game Title & Rules</span>
-            </h4>
-
-            <div>
-              <label className="text-xs font-semibold text-stone-700">Display Game Title</label>
-              <input
-                type="text"
-                value={content.title || ''}
-                placeholder="e.g. Birthday Balloon Popper 🎈"
-                onChange={(e) => updateField('title', e.target.value)}
-                className="w-full mt-1.5 px-3 py-2.5 rounded-xl border border-stone-300 text-xs bg-white text-stone-800 focus:ring-2 focus:ring-amber-500 focus:outline-none"
-              />
-            </div>
-
-            <div>
-              <label className="text-xs font-semibold text-stone-700">Instructions For Recipient</label>
-              <input
-                type="text"
-                value={content.instructions || ''}
-                placeholder="e.g. Pop all balloons to reveal your secret birthday message!"
-                onChange={(e) => updateField('instructions', e.target.value)}
-                className="w-full mt-1.5 px-3 py-2.5 rounded-xl border border-stone-300 text-xs bg-white text-stone-800 focus:ring-2 focus:ring-amber-500 focus:outline-none"
-              />
-            </div>
-
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-              <div>
-                <label className="text-xs font-semibold text-stone-700">Target Score / Goal</label>
-                <input
-                  type="number"
-                  min={1}
-                  max={50}
-                  value={content.targetScore || 8}
-                  onChange={(e) => updateField('targetScore', parseInt(e.target.value) || 8)}
-                  className="w-full mt-1.5 px-3 py-2 rounded-xl border border-stone-300 text-xs bg-white text-stone-800 focus:ring-2 focus:ring-amber-500 focus:outline-none"
-                />
-              </div>
-
-              <div>
-                <label className="text-xs font-semibold text-stone-700">Completion Reward Text</label>
-                <input
-                  type="text"
-                  value={content.rewardMessage || ''}
-                  placeholder="✨ Amazing! You unlocked a special memory!"
-                  onChange={(e) => updateField('rewardMessage', e.target.value)}
-                  className="w-full mt-1.5 px-3 py-2 rounded-xl border border-stone-300 text-xs bg-white text-stone-800 focus:ring-2 focus:ring-amber-500 focus:outline-none"
-                />
-              </div>
-            </div>
-          </div>
-        </div>
-      );
-    }
 
     case 'MEMORY_MAP': {
       const memories = content.memories || [];

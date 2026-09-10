@@ -236,9 +236,6 @@ function renderModule(
     case 'INSIDE_JOKES':
       return <InsideJokesModule content={content} />;
 
-    case 'MINI_GAME':
-      return <MiniGames content={content} onComplete={() => onComplete(mod._id, mod.type)} />;
-
     case 'PUZZLE':
       return <MiniGames content={{ ...content, gameType: 'PUZZLE' }} onComplete={() => onComplete(mod._id, mod.type)} />;
 
@@ -587,8 +584,8 @@ const VoiceModule: React.FC<{
           onClick={playVoice}
           className="px-4 py-2 rounded-full bg-amber-700 text-white text-xs font-semibold flex items-center gap-1.5 hover:bg-amber-800 cursor-pointer"
         >
-          {playing ? <Pause className="w-3.5 h-3.5" /> : <Play className="w-3.5 h-3.5" />}
-          <span>{playing ? 'Listening...' : 'Play Voice Note'}</span>
+          {isPlaying ? <Pause className="w-3.5 h-3.5" /> : <Play className="w-3.5 h-3.5" />}
+          <span>{isPlaying ? 'Listening...' : 'Play Voice Note'}</span>
         </button>
       </div>
 
@@ -597,7 +594,7 @@ const VoiceModule: React.FC<{
         {Array.from({ length: 28 }).map((_, i) => (
           <motion.div
             key={i}
-            animate={playing ? { height: [6, 12 + (i % 5) * 4, 6] } : { height: 8 }}
+            animate={isPlaying ? { height: [6, 12 + (i % 5) * 4, 6] } : { height: 8 }}
             transition={{ repeat: Infinity, duration: 0.8, delay: i * 0.04 }}
             className="w-1.5 bg-amber-600 rounded-full"
           />

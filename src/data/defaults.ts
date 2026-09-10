@@ -303,38 +303,6 @@ export function createDefaultModule(type: ModuleType, position: number, recipien
         },
       };
 
-    case 'MINI_GAME':
-      return {
-        _id: id,
-        experienceId: '',
-        type,
-        position,
-        enabled: true,
-        title: 'Mini-Game Center',
-        subtitle: 'Interactive playful challenges for bonus birthday points',
-        content: {
-          gameType: 'BALLOON_POP',
-          title: 'Birthday Balloon Popper 🎈',
-          instructions: 'Pop 8 colorful birthday balloons before the time runs out to reveal your prize!',
-          targetScore: 8,
-          questions: [
-            {
-              question: `What is ${recipientName}'s undisputed superpower?`,
-              options: ['Making everyone laugh until their stomach aches', 'Finding the best snacks at 1 AM', 'Giving top-tier advice', 'All of the above!'],
-              correctIndex: 3,
-              explanation: 'Because you are truly exceptional in every category!',
-            },
-            {
-              question: 'If today was an international holiday, what would the tradition be?',
-              options: ['Nap for 3 hours', 'Eat unlimited dessert guilt-free', 'Dance in the living room', 'All of the above'],
-              correctIndex: 3,
-              explanation: 'The perfect celebration formula!',
-            },
-          ],
-          rewardMessage: '✨ Incredible! You scored 100% on the Birthday Challenge! A special memory has unlocked!',
-        },
-      };
-
     case 'SECRET':
       return {
         _id: id,
@@ -616,7 +584,7 @@ export const TEMPLATE_PRESETS: TemplatePreset[] = [
     tagline: 'High-energy fun with games, inside jokes & secrets',
     description: 'Packed with balloon popping mini-games, inside-joke vault, quiz questions, secret unlocks, and community wishes from the circle.',
     theme: 'champagne_celebration',
-    modules: ['CINEMATIC_OPENING', 'BIRTHDAY_REVEAL', 'INSIDE_JOKES', 'MINI_GAME', 'SECRET', 'GIFT', 'PEOPLE', 'FINAL_REVEAL'],
+    modules: ['CINEMATIC_OPENING', 'BIRTHDAY_REVEAL', 'INSIDE_JOKES', 'SECRET', 'GIFT', 'PEOPLE', 'FINAL_REVEAL'],
   },
   {
     id: 'scrapbook_nostalgia',

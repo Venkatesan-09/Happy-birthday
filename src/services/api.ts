@@ -11,6 +11,57 @@ import {
 
 const BASE_URL = '/api';
 
+/**
+ * Compresses an image file client-side using Canvas before upload.
+ * Reduces file size by ~60-80% for typical photos, speeding up upload significantly.
+ * Audio and video files are returned unchanged.
+ */
+async function compressImageIfNeeded(file: File, maxDimension = 1920, quality = 0.85): Promise<File> {
+  if (!file.type.startsWith('image/')) return file;
+  // SVGs don't need compression
+  if (file.type === 'image/svg+xml') return file;
+
+  return new Promise((resolve) => {
+    const img = new window.Image();
+    const objectUrl = URL.createObjectURL(file);
+    img.onload = () => {
+      URL.revokeObjectURL(objectUrl);
+      let { width, height } = img;
+      // Scale down if larger than maxDimension
+      if (width > maxDimension || height > maxDimension) {
+        const ratio = Math.min(maxDimension / width, maxDimension / height);
+        width = Math.round(width * ratio);
+        height = Math.round(height * ratio);
+      }
+      const canvas = document.createElement('canvas');
+      canvas.width = width;
+      canvas.height = height;
+      const ctx = canvas.getContext('2d');
+      if (!ctx) { resolve(file); return; }
+      ctx.drawImage(img, 0, 0, width, height);
+      // Use JPEG for photos, keep PNG for transparency
+      const outputType = file.type === 'image/png' ? 'image/png' : 'image/jpeg';
+      const outputQuality = file.type === 'image/png' ? undefined : quality;
+      canvas.toBlob(
+        (blob) => {
+          if (!blob || blob.size >= file.size) {
+            // If compressed is larger, keep original
+            resolve(file);
+          } else {
+            const ext = outputType === 'image/jpeg' ? 'jpg' : 'png';
+            const name = file.name.replace(/\.[^.]+$/, `.${ext}`);
+            resolve(new File([blob], name, { type: outputType, lastModified: Date.now() }));
+          }
+        },
+        outputType,
+        outputQuality
+      );
+    };
+    img.onerror = () => { URL.revokeObjectURL(objectUrl); resolve(file); };
+    img.src = objectUrl;
+  });
+}
+
 export function getAuthToken(): string | null {
   try {
     return localStorage.getItem('dearyou_auth_token');
@@ -323,10 +374,12 @@ export const api = {
         onProgress?: (percent: number) => void;
       }
     ): Promise<any> {
+      // Compress image files client-side before upload for faster transfer
+      const fileToUpload = await compressImageIfNeeded(file);
       return new Promise((resolve, reject) => {
         const token = getAuthToken();
         const form = new FormData();
-        form.append('file', file);
+        form.append('file', fileToUpload);
         form.append('experienceId', experienceId);
         if (options?.moduleId) form.append('moduleId', options.moduleId);
         if (options?.altText) form.append('altText', options.altText);
@@ -396,9 +449,11 @@ export const api = {
         onProgress?: (percent: number) => void;
       }
     ): Promise<any> {
+      // Compress image files client-side before upload for faster transfer
+      const fileToUpload = await compressImageIfNeeded(file);
       return new Promise((resolve, reject) => {
         const form = new FormData();
-        form.append('file', file);
+        form.append('file', fileToUpload);
         if (options?.altText) form.append('altText', options.altText);
         if (options?.caption) form.append('caption', options.caption);
 

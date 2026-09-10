@@ -1,4 +1,4 @@
-import { UploadApiResponse, UploadApiOptions } from 'cloudinary';
+import { UploadApiOptions } from 'cloudinary';
 import { cloudinary } from '../../config/cloudinary';
 
 export interface UploadStreamOptions {
@@ -8,6 +8,7 @@ export interface UploadStreamOptions {
   allowedFormats?: string[];
   transformation?: object[];
   tags?: string[];
+  mimeType?: string;
 }
 
 export interface CloudinaryUploadResult {
@@ -24,23 +25,48 @@ export interface CloudinaryUploadResult {
 
 /**
  * Streams a buffer directly to Cloudinary using upload_stream.
- * This avoids any temporary file on disk.
+ * Optimised for speed:
+ *  - Images: quality=auto:low, fetch_format=auto (WebP/AVIF on supported browsers)
+ *  - Audio/Video: no eager transforms (process async on Cloudinary side)
+ *  - chunk_size=6MB so large files don't block the event loop
  */
 export function uploadStream(
   buffer: Buffer,
   options: UploadStreamOptions
 ): Promise<CloudinaryUploadResult> {
   return new Promise((resolve, reject) => {
+    const isImage = (options.resourceType === 'image') ||
+      (!options.resourceType && options.mimeType?.startsWith('image/'));
+    const isAudioOrVideo = options.resourceType === 'video'; // Cloudinary uses 'video' for audio too
+
     const uploadOptions: UploadApiOptions = {
       folder: options.folder,
       public_id: options.publicId,
       resource_type: options.resourceType ?? 'auto',
-      allowed_formats: options.allowedFormats,
-      transformation: options.transformation,
       tags: options.tags,
       use_filename: false,
       unique_filename: true,
       overwrite: false,
+      // ── Speed optimisations ───────────────────────────────────────────────
+      // Auto-select best format (WebP/AVIF for images) and quality — halves
+      // average image file size without visible quality loss.
+      ...(isImage && {
+        quality: 'auto:low',
+        fetch_format: 'auto',
+        // Limit dimensions to 1920px — most screens never exceed this
+        transformation: [
+          { width: 1920, height: 1920, crop: 'limit' },
+          ...(Array.isArray(options.transformation) ? options.transformation : []),
+        ],
+      }),
+      // For audio/video: skip eager transforms so the response is instant.
+      // Cloudinary processes async in the background.
+      ...(isAudioOrVideo && {
+        eager_async: true,          // do NOT block the response for video encoding
+        eager_notification_url: undefined,
+      }),
+      // Upload in 6 MB chunks — prevents timeouts on large files over slow links
+      chunk_size: 6 * 1024 * 1024,
     };
 
     const stream = cloudinary.uploader.upload_stream(uploadOptions, (error, result) => {

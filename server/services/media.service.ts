@@ -1,5 +1,3 @@
-import fs from 'fs';
-import path from 'path';
 import mongoose from 'mongoose';
 import { Media, IMedia } from '../models/Media';
 import { Experience } from '../models/Experience';
@@ -68,37 +66,24 @@ export async function creatorUpload(input: CreatorUploadInput): Promise<IMedia> 
 
   let result: CloudinaryUploadResult;
   try {
-    // 3. Upload to Cloudinary with timeout guard (8s)
+    // 3. Upload to Cloudinary
+    // Timeout: 90s — videos up to 100 MB need time on Render's free tier.
     const folder = buildCloudinaryFolder(experienceId, mediaType);
     const uploadPromise = uploadStream(file.buffer, {
       folder,
       resourceType: cloudinaryResourceType,
+      mimeType: file.mimetype,
       tags: ['dearyou', `exp_${experienceId}`, `creator_${userId}`],
     });
     const timeoutPromise = new Promise<never>((_, reject) =>
-      setTimeout(() => reject(new Error('Cloudinary upload timed out after 8s')), 8000)
+      setTimeout(() => reject(new Error('Cloudinary upload timed out after 90s — check your Cloudinary plan limits or file size')), 90_000)
     );
     result = await Promise.race([uploadPromise, timeoutPromise]);
   } catch (cloudErr: any) {
-    console.warn('[MediaService] Cloudinary upload failed, falling back to local storage:', cloudErr.message);
-    const uploadsDir = path.join(process.cwd(), 'uploads');
-    if (!fs.existsSync(uploadsDir)) {
-      fs.mkdirSync(uploadsDir, { recursive: true });
-    }
-    const ext = path.extname(file.originalname) || (file.mimetype.includes('image') ? '.jpg' : file.mimetype.includes('audio') ? '.mp3' : '.mp4');
-    const filename = `media_${Date.now()}_${Math.random().toString(36).slice(2, 9)}${ext}`;
-    const filePath = path.join(uploadsDir, filename);
-    fs.writeFileSync(filePath, file.buffer);
-
-    const publicUrl = `/uploads/${filename}`;
-    result = {
-      publicId: filename,
-      resourceType: cloudinaryResourceType,
-      secureUrl: publicUrl,
-      url: publicUrl,
-      format: ext.replace('.', ''),
-      bytes: file.size,
-    };
+    throw Object.assign(
+      new Error(`Media upload to Cloudinary failed: ${cloudErr.message}`),
+      { status: 502 }
+    );
   }
 
   // 4. Save Media record in MongoDB
@@ -161,36 +146,23 @@ export async function contributorUpload(input: ContributorUploadInput): Promise<
 
   let result: CloudinaryUploadResult;
   try {
+    // 2b. Upload to Cloudinary with 90s timeout
     const folder = buildCloudinaryFolder(experienceId, `contributors/${mediaType}`);
     const uploadPromise = uploadStream(file.buffer, {
       folder,
       resourceType: cloudinaryResourceType,
+      mimeType: file.mimetype,
       tags: ['dearyou', `exp_${experienceId}`, `contributor_${contributor._id.toString()}`],
     });
     const timeoutPromise = new Promise<never>((_, reject) =>
-      setTimeout(() => reject(new Error('Cloudinary upload timed out after 8s')), 8000)
+      setTimeout(() => reject(new Error('Cloudinary upload timed out after 90s')), 90_000)
     );
     result = await Promise.race([uploadPromise, timeoutPromise]);
   } catch (cloudErr: any) {
-    console.warn('[MediaService] Cloudinary upload failed for contributor, falling back to local storage:', cloudErr.message);
-    const uploadsDir = path.join(process.cwd(), 'uploads');
-    if (!fs.existsSync(uploadsDir)) {
-      fs.mkdirSync(uploadsDir, { recursive: true });
-    }
-    const ext = path.extname(file.originalname) || (file.mimetype.includes('image') ? '.jpg' : file.mimetype.includes('audio') ? '.mp3' : '.mp4');
-    const filename = `contrib_${Date.now()}_${Math.random().toString(36).slice(2, 9)}${ext}`;
-    const filePath = path.join(uploadsDir, filename);
-    fs.writeFileSync(filePath, file.buffer);
-
-    const publicUrl = `/uploads/${filename}`;
-    result = {
-      publicId: filename,
-      resourceType: cloudinaryResourceType,
-      secureUrl: publicUrl,
-      url: publicUrl,
-      format: ext.replace('.', ''),
-      bytes: file.size,
-    };
+    throw Object.assign(
+      new Error(`Media upload to Cloudinary failed: ${cloudErr.message}`),
+      { status: 502 }
+    );
   }
 
   // 3. Save Media record
