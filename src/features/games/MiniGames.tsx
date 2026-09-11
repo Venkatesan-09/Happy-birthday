@@ -8,7 +8,7 @@ import { TeddyMascot } from '../../components/TeddyMascot';
 import { getMediaUrl } from '../../utils/mediaUrl';
 
 interface MiniGamesProps {
-  content: MiniGameContent;
+  content: MiniGameContent; 
   onComplete?: () => void;
   accentColor?: string;
 }

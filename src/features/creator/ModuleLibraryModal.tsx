@@ -17,7 +17,6 @@ import {
   Clock,
   Heart,
   Smile,
-  Gamepad2,
   Puzzle,
   Plus,
   CheckCircle2,
@@ -118,10 +117,11 @@ const MODULE_CATALOG: ModuleMeta[] = [
   },
   {
     type: 'MUSIC',
-    title: 'Voice Note From My Heart (Upload)',
+    title: 'Personal Soundtrack & Song',
     category: 'Multimedia',
-    description: 'Upload an MP3 voice message or song that plays as a heartfelt audio card for the recipient.',
+    description: 'Upload a custom soundtrack or select an ambient melody that plays in the background throughout the journey.',
     icon: Music,
+    badge: 'Ambient Audio',
   },
   {
     type: 'VOICE',

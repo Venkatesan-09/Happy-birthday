@@ -5,6 +5,7 @@ import {
   Sparkles,
   Heart,
   Volume2,
+  Volume1,
   VolumeX,
   Play,
   Pause,
@@ -17,6 +18,10 @@ import {
   ChevronDown,
   Quote,
   Share2,
+  Music,
+  Music2,
+  Disc3,
+  Sliders,
 } from 'lucide-react';
 import { Experience, ExperienceModule } from '../../types';
 import { SoundEffects } from '../../utils/audioEngine';
@@ -40,34 +45,68 @@ export const ExperienceRenderer: React.FC<ExperienceRendererProps> = ({
 }) => {
   const [isPlayingAudio, setIsPlayingAudio] = useState(false);
   const [isAudioMuted, setIsAudioMuted] = useState(false);
+  const [audioVolume, setAudioVolume] = useState(0.75);
+  const [showVolumeSlider, setShowVolumeSlider] = useState(false);
+  const [audioLoadError, setAudioLoadError] = useState<string | null>(null);
   const modules = experience.modules || [];
 
-  // Resolve background MP3 audio URL: from experience.settings.backgroundMusicUrl OR from MUSIC (Voice Note) OR VOICE module
+  // Resolve background MP3 audio URL: from experience.settings.backgroundMusicUrl OR from MUSIC (Soundtrack/Voice Note) OR VOICE module
   const audioNoteModule = modules.find(
-    (m) => (m.type === 'MUSIC' || m.type === 'VOICE' || (m.type as any) === 'voice') && m.enabled && (m.content as any)?.audioUrl
+    (m) =>
+      (m.type === 'MUSIC' || m.type === 'VOICE' || (m.type as any) === 'voice') &&
+      m.enabled !== false &&
+      !!(m.content as any)?.audioUrl &&
+      String((m.content as any)?.audioUrl).trim().length > 0
   );
+
   const rawBgAudio =
     (experience.settings as any)?.backgroundMusicUrl ||
     ((audioNoteModule?.content as any)?.playAsBackground !== false ? (audioNoteModule?.content as any)?.audioUrl : null) ||
     (audioNoteModule?.content as any)?.audioUrl;
-  const backgroundAudioUrl = rawBgAudio ? getMediaUrl(rawBgAudio) : null;
+  const backgroundAudioUrl = rawBgAudio && typeof rawBgAudio === 'string' && rawBgAudio.trim().length > 0 ? getMediaUrl(rawBgAudio.trim()) : null;
+
+  const bgTrackTitle =
+    (experience.settings as any)?.backgroundMusicTitle ||
+    (audioNoteModule?.content as any)?.title ||
+    'Personal Soundtrack';
 
   const bgAudioRef = React.useRef<HTMLAudioElement | null>(null);
 
   const startBackgroundAudio = () => {
     if (isAudioMuted) return;
+    setAudioLoadError(null);
+
     if (backgroundAudioUrl) {
       if (!bgAudioRef.current) {
-        bgAudioRef.current = new Audio(backgroundAudioUrl);
-        bgAudioRef.current.loop = true;
+        const audio = new Audio(backgroundAudioUrl);
+        audio.loop = true;
+        audio.volume = audioVolume;
+        audio.preload = 'auto';
+
+        audio.onplaying = () => {
+          setIsPlayingAudio(true);
+          setAudioLoadError(null);
+        };
+        audio.onpause = () => {
+          setIsPlayingAudio(false);
+        };
+        audio.onerror = (e) => {
+          console.warn('[DearYou Audio] Custom soundtrack load error:', e);
+          setAudioLoadError('Unable to stream uploaded audio');
+          // Graceful fallback to ambient synthesizer track
+          SoundEffects.startAmbientTrack();
+          setIsPlayingAudio(true);
+        };
+        bgAudioRef.current = audio;
       }
+
       bgAudioRef.current
         .play()
         .then(() => {
           setIsPlayingAudio(true);
         })
-        .catch(() => {
-          // Autoplay policy may block initial play until user interaction
+        .catch((err) => {
+          console.log('[DearYou Audio] Autoplay awaiting direct user action:', err?.name);
         });
     } else {
       SoundEffects.startAmbientTrack();
@@ -100,27 +139,44 @@ export const ExperienceRenderer: React.FC<ExperienceRendererProps> = ({
     SoundEffects.toggleMute();
     if (nextMuted) {
       setIsPlayingAudio(false);
-    } else if (bgAudioRef.current && !bgAudioRef.current.paused) {
+    } else {
+      if (bgAudioRef.current && bgAudioRef.current.paused) {
+        bgAudioRef.current.play().catch(() => {});
+      }
       setIsPlayingAudio(true);
     }
   };
 
-  // Start background audio on first user touch / click
+  const handleVolumeChange = (vol: number) => {
+    setAudioVolume(vol);
+    if (bgAudioRef.current) {
+      bgAudioRef.current.volume = vol;
+      if (vol === 0) {
+        bgAudioRef.current.muted = true;
+        setIsAudioMuted(true);
+      } else if (isAudioMuted) {
+        bgAudioRef.current.muted = false;
+        setIsAudioMuted(false);
+      }
+    }
+  };
+
+  // Start background audio on user interaction anywhere on the screen
   React.useEffect(() => {
     if (!backgroundAudioUrl) return;
 
-    const handleFirstTouch = () => {
+    const handleFirstInteraction = () => {
       if (!bgAudioRef.current || bgAudioRef.current.paused) {
         startBackgroundAudio();
       }
     };
 
-    window.addEventListener('click', handleFirstTouch, { once: true });
-    window.addEventListener('touchstart', handleFirstTouch, { once: true });
+    // Attach to multiple interaction events to guarantee autoplay triggers as soon as receiver begins
+    const events = ['click', 'touchstart', 'pointerdown', 'keydown', 'scroll'];
+    events.forEach((ev) => window.addEventListener(ev, handleFirstInteraction, { once: true, passive: true }));
 
     return () => {
-      window.removeEventListener('click', handleFirstTouch);
-      window.removeEventListener('touchstart', handleFirstTouch);
+      events.forEach((ev) => window.removeEventListener(ev, handleFirstInteraction));
       if (bgAudioRef.current) {
         bgAudioRef.current.pause();
         bgAudioRef.current = null;
@@ -128,6 +184,13 @@ export const ExperienceRenderer: React.FC<ExperienceRendererProps> = ({
       SoundEffects.stopAmbientTrack();
     };
   }, [backgroundAudioUrl]);
+
+  // Keep volume in sync if audio element re-instantiated
+  React.useEffect(() => {
+    if (bgAudioRef.current) {
+      bgAudioRef.current.volume = audioVolume;
+    }
+  }, [audioVolume]);
 
   const markModuleCompleted = (modId: string, type: string) => {
     if (onTrackProgress) {
@@ -137,22 +200,89 @@ export const ExperienceRenderer: React.FC<ExperienceRendererProps> = ({
 
   return (
     <div className={`min-h-screen bg-gradient-to-b ${experience.theme?.background || 'from-[#faf6f0] to-[#f0e4d0]'} text-[#2c2623] pb-24 transition-colors duration-500`}>
-      {/* Floating Ambient Soundtrack Bar */}
-      <div className="fixed top-3 right-3 sm:top-4 sm:right-4 z-40 flex items-center gap-1.5 sm:gap-2 bg-white/90 backdrop-blur-md px-2.5 sm:px-3.5 py-1.5 sm:py-2 rounded-full border border-amber-200/80 shadow-md">
+      {/* Ultra-Modern Floating Ambient Soundtrack Player Bar */}
+      <div className="fixed top-3 right-3 sm:top-4 sm:right-4 z-40 flex items-center gap-1.5 sm:gap-2 bg-white/95 backdrop-blur-md px-3 sm:px-4 py-2 rounded-full border border-amber-300/80 shadow-lg shadow-amber-950/5">
         <button
           onClick={toggleSoundtrack}
-          className="flex items-center gap-1 sm:gap-1.5 text-[11px] sm:text-xs font-medium text-amber-900 hover:text-amber-700 cursor-pointer"
+          className="flex items-center gap-2 text-xs font-semibold text-stone-900 hover:text-amber-700 cursor-pointer transition"
+          title={isPlayingAudio ? 'Pause background soundtrack' : 'Play background soundtrack'}
         >
-          {isPlayingAudio ? <Pause className="w-3.5 h-3.5 fill-current text-amber-700" /> : <Play className="w-3.5 h-3.5 fill-current text-amber-700" />}
-          <span className="hidden xs:inline">{isPlayingAudio ? 'Playing' : 'Music'}</span>
+          <div className={`w-6 h-6 rounded-full flex items-center justify-center transition-transform ${
+            isPlayingAudio ? 'bg-amber-600 text-white shadow-xs scale-105' : 'bg-amber-100 text-amber-800'
+          }`}>
+            {isPlayingAudio ? (
+              <Pause className="w-3 h-3 fill-current" />
+            ) : (
+              <Play className="w-3 h-3 fill-current ml-0.5" />
+            )}
+          </div>
+          <div className="flex flex-col text-left">
+            <span className="text-[11px] font-bold leading-tight flex items-center gap-1.5 text-stone-800">
+              <span className="truncate max-w-[110px] sm:max-w-[150px]">{bgTrackTitle}</span>
+              {isPlayingAudio && (
+                <span className="flex items-center gap-0.5 h-2.5">
+                  <span className="w-0.5 h-2.5 bg-amber-600 rounded-full animate-pulse" />
+                  <span className="w-0.5 h-1.5 bg-amber-500 rounded-full animate-pulse delay-75" />
+                  <span className="w-0.5 h-2 bg-amber-600 rounded-full animate-pulse delay-150" />
+                </span>
+              )}
+            </span>
+            <span className="text-[9px] text-stone-500 font-normal">
+              {isPlayingAudio ? 'Playing in background' : 'Soundtrack paused'}
+            </span>
+          </div>
         </button>
-        <div className="w-px h-3 bg-amber-200" />
+
+        <div className="w-px h-4 bg-stone-200 mx-0.5" />
+
+        {/* Volume popover trigger */}
+        <div className="relative">
+          <button
+            onClick={() => setShowVolumeSlider((v) => !v)}
+            className="text-stone-500 hover:text-amber-800 p-1 rounded-full hover:bg-stone-100 cursor-pointer transition"
+            title="Adjust volume"
+          >
+            <Sliders className="w-3.5 h-3.5" />
+          </button>
+          <AnimatePresence>
+            {showVolumeSlider && (
+              <motion.div
+                initial={{ opacity: 0, scale: 0.9, y: 5 }}
+                animate={{ opacity: 1, scale: 1, y: 0 }}
+                exit={{ opacity: 0, scale: 0.9, y: 5 }}
+                className="absolute right-0 mt-2 p-3 bg-white/95 backdrop-blur-md rounded-2xl border border-stone-200 shadow-xl w-36 flex flex-col gap-2 z-50"
+              >
+                <div className="flex items-center justify-between text-[10px] font-bold text-stone-600 uppercase">
+                  <span>Volume</span>
+                  <span>{Math.round(audioVolume * 100)}%</span>
+                </div>
+                <input
+                  type="range"
+                  min="0"
+                  max="1"
+                  step="0.05"
+                  value={audioVolume}
+                  onChange={(e) => handleVolumeChange(parseFloat(e.target.value))}
+                  className="w-full h-1.5 bg-amber-100 rounded-lg appearance-none cursor-pointer accent-amber-600"
+                />
+              </motion.div>
+            )}
+          </AnimatePresence>
+        </div>
+
+        {/* Mute button */}
         <button
           onClick={toggleMute}
-          className="text-stone-600 hover:text-amber-800 p-0.5 sm:p-1 cursor-pointer"
+          className="text-stone-600 hover:text-amber-800 p-1 cursor-pointer transition rounded-full hover:bg-stone-100"
           title={isAudioMuted ? 'Unmute audio' : 'Mute audio'}
         >
-          {isAudioMuted ? <VolumeX className="w-3.5 h-3.5 text-rose-500" /> : <Volume2 className="w-3.5 h-3.5" />}
+          {isAudioMuted ? (
+            <VolumeX className="w-3.5 h-3.5 text-rose-500" />
+          ) : audioVolume < 0.4 ? (
+            <Volume1 className="w-3.5 h-3.5 text-amber-700" />
+          ) : (
+            <Volume2 className="w-3.5 h-3.5 text-amber-700" />
+          )}
         </button>
       </div>
 
@@ -453,45 +583,78 @@ const MemoryMapModule: React.FC<{ content: any }> = ({ content }) => {
   );
 };
 
-// 5. MUSIC — Personal Soundtrack / Voice Note From My Heart
+// 5. MUSIC — Personal Soundtrack & Heartfelt Dedication
 const MusicModule: React.FC<{
   content: any;
   isBackgroundPlaying?: boolean;
   onToggleBackground?: () => void;
 }> = ({ content, isBackgroundPlaying = false, onToggleBackground }) => {
   const [localPlaying, setLocalPlaying] = useState(false);
+  const [currentTime, setCurrentTime] = useState(0);
+  const [duration, setDuration] = useState(0);
+  const [isSeeking, setIsSeeking] = useState(false);
   const audioRef = React.useRef<HTMLAudioElement | null>(null);
 
-  const hasCustomAudio = !!(content.audioUrl && content.audioUrl.trim());
+  const hasCustomAudio = !!(content.audioUrl && String(content.audioUrl).trim());
   const playsInBackground = content.playAsBackground !== false;
 
-  // If playAsBackground is enabled and onToggleBackground is provided,
-  // this module controls/mirrors the global background audio player.
+  // Sync state if background player is driving
   const isPlaying = onToggleBackground && hasCustomAudio && playsInBackground
     ? isBackgroundPlaying
     : localPlaying;
 
+  const resolvedAudioUrl = hasCustomAudio ? getMediaUrl(String(content.audioUrl).trim()) : null;
+
+  const formatTime = (secs: number) => {
+    if (!secs || isNaN(secs)) return '0:00';
+    const m = Math.floor(secs / 60);
+    const s = Math.floor(secs % 60);
+    return `${m}:${s < 10 ? '0' : ''}${s}`;
+  };
+
+  // Local audio management
+  useEffect(() => {
+    if (!resolvedAudioUrl) return;
+
+    if (!audioRef.current) {
+      const audio = new Audio(resolvedAudioUrl);
+      audio.loop = true;
+      audio.preload = 'metadata';
+
+      audio.ontimeupdate = () => {
+        if (!isSeeking && audioRef.current) {
+          setCurrentTime(audioRef.current.currentTime);
+        }
+      };
+      audio.onloadedmetadata = () => {
+        if (audioRef.current && audioRef.current.duration) {
+          setDuration(audioRef.current.duration);
+        }
+      };
+      audio.onended = () => setLocalPlaying(false);
+      audioRef.current = audio;
+    }
+
+    return () => {
+      if (audioRef.current) {
+        audioRef.current.pause();
+        audioRef.current = null;
+      }
+    };
+  }, [resolvedAudioUrl]);
+
   const toggle = () => {
-    // Use global background player if available and configured
     if (onToggleBackground && hasCustomAudio && playsInBackground) {
       onToggleBackground();
       return;
     }
 
-    // Fallback: local audio element
-    if (hasCustomAudio) {
-      if (!audioRef.current) {
-        audioRef.current = new Audio(getMediaUrl(content.audioUrl));
-        audioRef.current.loop = true;
-        audioRef.current.volume = content.volume ?? 0.7;
-        audioRef.current.onended = () => setLocalPlaying(false);
-      }
+    if (hasCustomAudio && audioRef.current) {
       if (localPlaying) {
         audioRef.current.pause();
         setLocalPlaying(false);
       } else {
-        audioRef.current.play().catch(() => {});
-        setLocalPlaying(true);
+        audioRef.current.play().then(() => setLocalPlaying(true)).catch(() => {});
       }
     } else {
       if (localPlaying) {
@@ -504,95 +667,197 @@ const MusicModule: React.FC<{
     }
   };
 
-  // Cleanup on unmount
-  React.useEffect(() => {
-    return () => {
-      if (audioRef.current) {
-        audioRef.current.pause();
-        audioRef.current = null;
-      }
-    };
-  }, []);
+  const handleSeek = (timeSec: number) => {
+    setCurrentTime(timeSec);
+    if (audioRef.current) {
+      audioRef.current.currentTime = timeSec;
+    }
+  };
 
   return (
-    <div className="relative overflow-hidden rounded-3xl bg-gradient-to-br from-rose-50 via-[#fffdfa] to-amber-50/80 border border-rose-200/80 shadow-md">
-      {/* Background blur decoration */}
-      <div className="absolute -top-10 -right-10 w-40 h-40 rounded-full bg-rose-200/30 blur-3xl pointer-events-none" />
-      <div className="absolute -bottom-8 -left-8 w-32 h-32 rounded-full bg-amber-200/20 blur-2xl pointer-events-none" />
+    <div className="relative overflow-hidden rounded-3xl bg-[#fffdfa] border-2 border-amber-200/90 shadow-xl shadow-amber-950/5 transition-all">
+      {/* Decorative Warm Ambient Glows */}
+      <div className="absolute -top-16 -right-16 w-56 h-56 rounded-full bg-gradient-to-br from-amber-200/40 to-rose-200/30 blur-3xl pointer-events-none" />
+      <div className="absolute -bottom-12 -left-12 w-48 h-48 rounded-full bg-gradient-to-tr from-orange-200/30 to-amber-100/40 blur-2xl pointer-events-none" />
 
-      <div className="relative p-5 sm:p-6 space-y-4">
-        {/* Header badge */}
+      <div className="relative p-6 sm:p-8 space-y-6">
+        {/* Top Header Badge */}
         <div className="flex items-center justify-between">
-          <span className="inline-flex items-center gap-1.5 text-[11px] font-bold text-rose-700 bg-rose-100/80 px-2.5 py-1 rounded-full border border-rose-200">
-            <span className="w-1.5 h-1.5 rounded-full bg-rose-500 animate-pulse" />
-            {playsInBackground ? 'Plays In Background' : 'Voice Note'}
-          </span>
-          {isPlaying && (
-            <span className="text-[11px] font-semibold text-amber-800 bg-amber-100 px-2.5 py-1 rounded-full animate-pulse">
-              ♪ Now Playing
+          <div className="flex items-center gap-2">
+            <span className="w-8 h-8 rounded-xl bg-amber-100 text-amber-900 flex items-center justify-center shadow-xs">
+              <Music2 className="w-4 h-4" />
             </span>
-          )}
-        </div>
+            <div>
+              <span className="text-[10px] font-extrabold uppercase tracking-widest text-amber-800">
+                Personal Soundtrack
+              </span>
+              <p className="text-xs text-stone-500">
+                {content.senderName ? `Dedicated by ${content.senderName}` : 'Curated Birthday Melody'}
+              </p>
+            </div>
+          </div>
 
-        {/* Player row */}
-        <div className="flex items-center gap-4">
-          <button
-            type="button"
-            onClick={toggle}
-            className={`w-14 h-14 rounded-full flex items-center justify-center shadow-lg transition-all duration-200 cursor-pointer flex-shrink-0 ${
-              isPlaying
-                ? 'bg-rose-600 hover:bg-rose-700 scale-95'
-                : 'bg-gradient-to-br from-rose-600 to-amber-600 hover:from-rose-700 hover:to-amber-700'
-            }`}
-          >
-            {isPlaying
-              ? <Pause className="w-6 h-6 text-white fill-current" />
-              : <Play className="w-6 h-6 text-white fill-current ml-0.5" />
-            }
-          </button>
-
-          <div className="flex-1 min-w-0">
-            <h4 className="font-playfair font-bold text-stone-900 text-base leading-tight truncate">
-              {content.title || 'Voice Note From My Heart'}
-            </h4>
-            <p className="text-xs text-stone-500 mt-0.5">
-              {content.senderName ? `From ${content.senderName}` : 'A special audio wish just for you'}
-              {content.durationSeconds ? ` • ${content.durationSeconds}` : ''}
-            </p>
+          <div className="flex items-center gap-1.5">
+            {playsInBackground && (
+              <span className="hidden sm:inline-flex items-center gap-1 text-[10px] font-bold text-emerald-800 bg-emerald-50 border border-emerald-200 px-2.5 py-1 rounded-full">
+                <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                Background Ambient
+              </span>
+            )}
+            {isPlaying && (
+              <span className="inline-flex items-center gap-1 text-[11px] font-bold text-amber-900 bg-amber-100/90 border border-amber-200 px-2.5 py-1 rounded-full animate-pulse">
+                ♪ Playing
+              </span>
+            )}
           </div>
         </div>
 
-        {/* Animated waveform bars */}
-        <div className="flex items-center gap-0.5 h-10 px-2 bg-white/60 backdrop-blur-sm rounded-2xl border border-rose-100">
-          {Array.from({ length: 36 }).map((_, i) => (
+        {/* Center Vinyl & Track Info Deck */}
+        <div className="flex flex-col sm:flex-row items-center gap-6 pt-2">
+          {/* Animated Spinning Vinyl Graphic */}
+          <div className="relative flex-shrink-0">
+            <motion.div
+              animate={isPlaying ? { rotate: 360 } : { rotate: 0 }}
+              transition={
+                isPlaying
+                  ? { repeat: Infinity, duration: 8, ease: 'linear' }
+                  : { duration: 0.5 }
+              }
+              className="w-28 h-28 sm:w-32 sm:h-32 rounded-full bg-stone-950 border-4 border-stone-800 shadow-2xl flex items-center justify-center relative overflow-hidden"
+              style={{
+                backgroundImage: 'radial-gradient(circle, #292524 20%, #0c0a09 70%, #1c1917 100%)',
+              }}
+            >
+              {/* Vinyl grooves */}
+              <div className="absolute inset-2 rounded-full border border-stone-700/40 opacity-70" />
+              <div className="absolute inset-4 rounded-full border border-stone-700/30 opacity-60" />
+              <div className="absolute inset-6 rounded-full border border-stone-700/20 opacity-50" />
+              <div className="absolute inset-8 rounded-full border border-stone-700/30 opacity-60" />
+
+              {/* Center Record Label */}
+              <div className="w-11 h-11 rounded-full bg-gradient-to-tr from-amber-500 via-rose-500 to-amber-600 flex items-center justify-center shadow-inner border border-white/20">
+                <div className="w-3 h-3 rounded-full bg-stone-950 border border-stone-800" />
+              </div>
+            </motion.div>
+
+            {/* Tonearm / Play indicator pill */}
+            <div className="absolute -bottom-1 -right-1 bg-white p-1 rounded-full shadow-md border border-amber-200">
+              <span className={`w-3 h-3 rounded-full block ${isPlaying ? 'bg-emerald-500 animate-ping' : 'bg-stone-300'}`} />
+            </div>
+          </div>
+
+          {/* Track Details & Main Play Button */}
+          <div className="flex-1 min-w-0 text-center sm:text-left space-y-2.5">
+            <div>
+              <h3 className="font-playfair font-bold text-xl sm:text-2xl text-stone-900 leading-tight">
+                {content.title || 'Special Birthday Soundtrack'}
+              </h3>
+              <p className="text-xs sm:text-sm text-stone-600 mt-1 font-medium">
+                {content.subtitle || 'Every story has a soundtrack. Tap play to immerse yourself in the melody.'}
+              </p>
+            </div>
+
+            {/* Play Button Row */}
+            <div className="flex items-center justify-center sm:justify-start gap-3 pt-1">
+              <button
+                type="button"
+                onClick={toggle}
+                className={`px-6 py-3 rounded-full flex items-center gap-2.5 font-bold text-sm shadow-md transition-all duration-200 cursor-pointer transform hover:-translate-y-0.5 active:translate-y-0 ${
+                  isPlaying
+                    ? 'bg-amber-800 hover:bg-amber-900 text-white shadow-amber-900/20'
+                    : 'bg-gradient-to-r from-amber-600 to-rose-600 hover:from-amber-700 hover:to-rose-700 text-white shadow-rose-900/20'
+                }`}
+              >
+                {isPlaying ? (
+                  <>
+                    <Pause className="w-4 h-4 fill-current" />
+                    <span>Pause Soundtrack</span>
+                  </>
+                ) : (
+                  <>
+                    <Play className="w-4 h-4 fill-current ml-0.5" />
+                    <span>Play Soundtrack</span>
+                  </>
+                )}
+              </button>
+
+              {content.durationSeconds && (
+                <span className="text-xs font-semibold px-3 py-1.5 rounded-full bg-amber-50 text-amber-900 border border-amber-200">
+                  ⏱ {content.durationSeconds}
+                </span>
+              )}
+            </div>
+          </div>
+        </div>
+
+        {/* Audio Scrubber & Waveform */}
+        {hasCustomAudio && duration > 0 && (
+          <div className="space-y-1.5 pt-2">
+            <div className="relative">
+              <input
+                type="range"
+                min="0"
+                max={duration || 100}
+                step="0.5"
+                value={currentTime}
+                onMouseDown={() => setIsSeeking(true)}
+                onTouchStart={() => setIsSeeking(true)}
+                onChange={(e) => handleSeek(parseFloat(e.target.value))}
+                onMouseUp={() => setIsSeeking(false)}
+                onTouchEnd={() => setIsSeeking(false)}
+                className="w-full h-2 bg-amber-100/90 rounded-full appearance-none cursor-pointer accent-amber-700"
+              />
+            </div>
+            <div className="flex items-center justify-between text-[11px] font-mono font-medium text-stone-500 px-0.5">
+              <span>{formatTime(currentTime)}</span>
+              <span>{formatTime(duration)}</span>
+            </div>
+          </div>
+        )}
+
+        {/* Dynamic Waveform Visualizer */}
+        <div className="flex items-center gap-0.5 h-9 px-3 bg-amber-50/70 backdrop-blur-sm rounded-2xl border border-amber-200/80">
+          {Array.from({ length: 42 }).map((_, i) => (
             <motion.div
               key={i}
               animate={
                 isPlaying
-                  ? { height: [4, 8 + ((i * 7 + 3) % 18), 4] }
-                  : { height: i % 3 === 0 ? 8 : i % 2 === 0 ? 6 : 4 }
+                  ? { height: [4, 8 + ((i * 7 + 4) % 24), 4] }
+                  : { height: i % 4 === 0 ? 9 : i % 2 === 0 ? 6 : 3 }
               }
               transition={
                 isPlaying
-                  ? { repeat: Infinity, duration: 0.6 + (i % 4) * 0.1, delay: i * 0.03, ease: 'easeInOut' }
+                  ? { repeat: Infinity, duration: 0.55 + (i % 5) * 0.08, delay: i * 0.02, ease: 'easeInOut' }
                   : { duration: 0.3 }
               }
-              className={`flex-1 rounded-full ${
-                isPlaying ? 'bg-gradient-to-t from-rose-500 to-amber-400' : 'bg-rose-200'
+              className={`flex-1 rounded-full transition-colors ${
+                isPlaying
+                  ? 'bg-gradient-to-t from-amber-600 via-rose-500 to-amber-400'
+                  : 'bg-amber-200/80'
               }`}
-              style={{ minWidth: 2, maxWidth: 6 }}
+              style={{ minWidth: 2, maxWidth: 5 }}
             />
           ))}
         </div>
 
-        {/* Tap hint */}
-        {!isPlaying && (
-          <p className="text-center text-[11px] text-stone-400">
-            {playsInBackground
-              ? '🎵 Also plays automatically in background'
-              : 'Tap the button above to listen'}
-          </p>
+        {/* Dedication / Transcription Note */}
+        {content.transcription && (
+          <div className="p-4 rounded-2xl bg-amber-50/50 border border-amber-200/60 text-xs text-stone-700 space-y-1">
+            <span className="text-[10px] font-bold text-amber-800 uppercase tracking-wider block">
+              Dedication Note:
+            </span>
+            <p className="italic font-playfair text-stone-800 text-sm leading-relaxed">
+              “{content.transcription}”
+            </p>
+          </div>
         )}
+
+        {/* Background Playback Notice */}
+        <p className="text-center text-[11px] text-stone-400 font-medium">
+          {playsInBackground
+            ? '🎵 This soundtrack accompanies you as you scroll through the journey'
+            : '🎧 Best enjoyed with headphones'}
+        </p>
       </div>
     </div>
   );

@@ -2,8 +2,7 @@
 
 @layer base {
   body {
-    font-family: 'DM Sans', -apple-system, BlinkMacSystemFont, sans-serif;
-    font-optical-sizing: auto;
+    font-family: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, sans-serif;
   }
 }
 
@@ -12,11 +11,11 @@
 }
 
 .font-playfair {
-  font-family: 'Cormorant Garamond', Georgia, serif;
+  font-family: 'Playfair Display', Georgia, serif;
 }
 
 .font-jakarta {
-  font-family: 'DM Sans', sans-serif;
+  font-family: 'Plus Jakarta Sans', sans-serif;
 }
 
 /* Custom smooth scrollbar */

@@ -16,18 +16,31 @@ import {
   Wand2,
   CheckCircle2,
   AlertCircle,
+  Save,
+  Palette,
   Settings,
   Upload,
+  Trophy,
+  HelpCircle,
+  HeartHandshake,
   Puzzle,
+  Menu,
   MapPin,
   Star,
+  Image,
+  Heart,
   Globe,
   BookOpen,
   Music2,
   Mic,
   Video,
+  Link,
   Pause,
   Play,
+  Disc3,
+  Radio,
+  Volume2,
+  FileAudio,
 } from 'lucide-react';
 import { Experience, ExperienceModule, ModuleType } from '../../types';
 import { api } from '../../services/api';
@@ -587,18 +600,16 @@ export const ExperienceBuilder: React.FC<ExperienceBuilderProps> = ({
                       <span className="truncate">{m.title || m.type}</span>
                     </div>
 
-                    {/* Reorder + delete controls — always visible on touch, hover on desktop */}
-                    <div className="flex items-center gap-1 opacity-100 md:opacity-0 md:group-hover:opacity-100 transition-opacity">
+                    <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
                       <button
                         onClick={(e) => {
                           e.stopPropagation();
                           handleMoveModule(m._id, 'up');
                         }}
                         disabled={idx === 0}
-                        className="p-1.5 md:p-1 text-stone-400 hover:text-stone-700 disabled:opacity-20 cursor-pointer touch-manipulation"
-                        title="Move Up"
+                        className="p-1 text-stone-400 hover:text-stone-700 disabled:opacity-20 cursor-pointer"
                       >
-                        <ChevronUp className="w-3.5 h-3.5 md:w-3 md:h-3" />
+                        <ChevronUp className="w-3 h-3" />
                       </button>
                       <button
                         onClick={(e) => {
@@ -606,20 +617,18 @@ export const ExperienceBuilder: React.FC<ExperienceBuilderProps> = ({
                           handleMoveModule(m._id, 'down');
                         }}
                         disabled={idx === modules.length - 1}
-                        className="p-1.5 md:p-1 text-stone-400 hover:text-stone-700 disabled:opacity-20 cursor-pointer touch-manipulation"
-                        title="Move Down"
+                        className="p-1 text-stone-400 hover:text-stone-700 disabled:opacity-20 cursor-pointer"
                       >
-                        <ChevronDown className="w-3.5 h-3.5 md:w-3 md:h-3" />
+                        <ChevronDown className="w-3 h-3" />
                       </button>
                       <button
                         onClick={(e) => {
                           e.stopPropagation();
                           handleDeleteModule(m._id);
                         }}
-                        className="p-1.5 md:p-1 text-stone-400 hover:text-rose-600 cursor-pointer touch-manipulation"
-                        title="Delete Module"
+                        className="p-1 text-stone-400 hover:text-rose-600 cursor-pointer"
                       >
-                        <Trash2 className="w-3.5 h-3.5 md:w-3 md:h-3" />
+                        <Trash2 className="w-3 h-3" />
                       </button>
                     </div>
                   </div>
@@ -748,7 +757,43 @@ function getAITypeForModule(type?: ModuleType): any {
   }
 }
 
-// Voice Note module fast MP3 editor with background playback controls
+// Preset royalty-free ambient & soundtrack background melodies for fast 1-click selection
+const SOUNDTRACK_PRESETS = [
+  {
+    id: 'preset_acoustic',
+    title: 'Warm Acoustic Nostalgia',
+    artist: 'DearYou Acoustic Session',
+    duration: '2:15',
+    url: 'https://assets.mixkit.co/music/preview/mixkit-serene-view-443.mp3',
+    genre: 'Warm Guitar',
+  },
+  {
+    id: 'preset_piano',
+    title: 'Cinematic Piano Reverie',
+    artist: 'Moonlit Memories',
+    duration: '2:40',
+    url: 'https://assets.mixkit.co/music/preview/mixkit-valley-sunset-127.mp3',
+    genre: 'Cinematic Piano',
+  },
+  {
+    id: 'preset_celebration',
+    title: 'Upbeat Joy & Confetti',
+    artist: 'Festival of Lights',
+    duration: '1:58',
+    url: 'https://assets.mixkit.co/music/preview/mixkit-raising-me-higher-34.mp3',
+    genre: 'Celebration Beat',
+  },
+  {
+    id: 'preset_starlight',
+    title: 'Starlight Dreamscape',
+    artist: 'Cosmic Serenade',
+    duration: '3:05',
+    url: 'https://assets.mixkit.co/music/preview/mixkit-sleepy-cat-135.mp3',
+    genre: 'Dreamy Ambient',
+  },
+];
+
+// Personal Soundtrack & Voice Note Studio Deck
 const VoiceNoteEditor: React.FC<{
   content: any;
   updateField: (field: string, value: any) => void;
@@ -756,12 +801,17 @@ const VoiceNoteEditor: React.FC<{
   moduleId?: string;
   MediaPickButton: any;
 }> = ({ content, updateField, experienceId, moduleId, MediaPickButton }) => {
+  const [activeSubTab, setActiveSubTab] = useState<'upload' | 'presets' | 'dedication'>('upload');
   const [uploading, setUploading] = useState(false);
   const [uploadProgress, setUploadProgress] = useState(0);
   const [uploadError, setUploadError] = useState('');
   const [isPlaying, setIsPlaying] = useState(false);
+  const [isDragOver, setIsDragOver] = useState(false);
+  const [previewDuration, setPreviewDuration] = useState<string>(content.durationSeconds || '');
   const fileInputRef = useRef<HTMLInputElement>(null);
   const audioPreviewRef = useRef<HTMLAudioElement | null>(null);
+
+  const hasAudio = !!(content.audioUrl && String(content.audioUrl).trim());
 
   const handleAudioFile = async (file: File) => {
     if (!file) return;
@@ -775,19 +825,19 @@ const VoiceNoteEditor: React.FC<{
     setUploading(true);
     setUploadProgress(0);
 
-    // Instant local duration readout via HTML5 Audio
+    // Instant local duration calculation
     try {
       const tempAudio = new Audio(URL.createObjectURL(file));
       tempAudio.onloadedmetadata = () => {
         if (tempAudio.duration && !isNaN(tempAudio.duration)) {
           const mins = Math.floor(tempAudio.duration / 60);
           const secs = Math.floor(tempAudio.duration % 60);
-          updateField('durationSeconds', `${mins}:${secs < 10 ? '0' : ''}${secs}`);
+          const formatted = `${mins}:${secs < 10 ? '0' : ''}${secs}`;
+          setPreviewDuration(formatted);
+          updateField('durationSeconds', formatted);
         }
       };
-    } catch {
-      // ignore
-    }
+    } catch {}
 
     try {
       const result: any = await api.media.uploadFile(file, experienceId, {
@@ -798,8 +848,12 @@ const VoiceNoteEditor: React.FC<{
       const audioUrl = result?.cloudinary?.secureUrl || result?.secureUrl || result?.url || '';
       if (audioUrl) {
         updateField('audioUrl', audioUrl);
+        // Default to playing in background when uploaded
         if (content.playAsBackground !== false) {
           updateField('playAsBackground', true);
+        }
+        if (!content.title || content.title === 'Personal Soundtrack') {
+          updateField('title', file.name.replace(/\.[^/.]+$/, ''));
         }
       }
     } catch (err: any) {
@@ -814,16 +868,18 @@ const VoiceNoteEditor: React.FC<{
 
   const toggleAudioPreview = () => {
     if (!content.audioUrl) return;
+
     if (!audioPreviewRef.current) {
-      audioPreviewRef.current = new Audio(getMediaUrl(content.audioUrl));
-      audioPreviewRef.current.onended = () => setIsPlaying(false);
+      const audio = new Audio(getMediaUrl(content.audioUrl));
+      audio.onended = () => setIsPlaying(false);
+      audioPreviewRef.current = audio;
     }
+
     if (isPlaying) {
       audioPreviewRef.current.pause();
       setIsPlaying(false);
     } else {
-      audioPreviewRef.current.play().catch(() => {});
-      setIsPlaying(true);
+      audioPreviewRef.current.play().then(() => setIsPlaying(true)).catch(() => {});
     }
   };
 
@@ -837,195 +893,331 @@ const VoiceNoteEditor: React.FC<{
   }, [content.audioUrl]);
 
   return (
-    <div className="space-y-5">
-      <div className="p-5 rounded-2xl bg-gradient-to-br from-rose-50/80 via-[#fffdfa] to-amber-50/60 border border-rose-200 shadow-xs space-y-4">
-        <div className="flex items-center justify-between">
-          <h4 className="text-xs font-bold text-stone-800 uppercase tracking-wider flex items-center gap-2">
-            <Mic className="w-4 h-4 text-rose-600" />
-            <span>Voice Note From My Heart</span>
-          </h4>
-          <span className="text-[10px] font-semibold text-rose-700 bg-rose-100/70 border border-rose-200 px-2 py-0.5 rounded-full">
-            Plays to Receiver
+    <div className="space-y-6">
+      {/* Studio Header Card */}
+      <div className="p-6 rounded-3xl bg-gradient-to-br from-amber-500/10 via-[#fffdfa] to-rose-500/10 border-2 border-amber-200/80 shadow-md relative overflow-hidden">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-4 border-b border-amber-200/60">
+          <div className="flex items-center gap-3">
+            <div className="w-12 h-12 rounded-2xl bg-gradient-to-tr from-amber-600 to-rose-600 text-white flex items-center justify-center shadow-md">
+              <Disc3 className={`w-6 h-6 ${isPlaying ? 'animate-spin' : ''}`} />
+            </div>
+            <div>
+              <h3 className="font-playfair font-bold text-base sm:text-lg text-stone-900 leading-tight">
+                Personal Soundtrack Studio
+              </h3>
+              <p className="text-xs text-stone-500 mt-0.5">
+                Upload custom audio or choose a curated melody that accompanies the recipient.
+              </p>
+            </div>
+          </div>
+
+          <span className="self-start sm:self-auto inline-flex items-center gap-1.5 text-[11px] font-bold text-amber-900 bg-amber-100/90 border border-amber-300/70 px-3 py-1 rounded-full shadow-2xs">
+            <span className="w-2 h-2 rounded-full bg-amber-600 animate-pulse" />
+            Plays in Receiver Background
           </span>
         </div>
-        <p className="text-xs text-stone-500">
-          Upload your MP3 voice note or song. It will display as an animated waveform card and play in the background for the recipient!
-        </p>
 
-        {/* Fast Direct 1-Click MP3 Uploader */}
-        <div className="p-4 rounded-xl bg-white border-2 border-dashed border-rose-300 hover:border-rose-400 transition-colors">
-          <input
-            type="file"
-            ref={fileInputRef}
-            accept="audio/mp3,audio/mpeg,audio/wav,audio/ogg,audio/m4a,audio/*"
-            className="hidden"
-            onChange={(e) => {
-              const file = e.target.files?.[0];
-              if (file) handleAudioFile(file);
-            }}
-          />
-
-          {uploading ? (
-            <div className="py-4 text-center space-y-2">
-              <div className="w-8 h-8 mx-auto border-3 border-rose-200 border-t-rose-600 rounded-full animate-spin" />
-              <p className="text-xs font-semibold text-rose-800">
-                Uploading MP3 Audio ({uploadProgress}%)...
-              </p>
-              <div className="w-48 max-w-full mx-auto h-2 bg-rose-100 rounded-full overflow-hidden">
-                <div
-                  className="h-full bg-rose-600 transition-all duration-300"
-                  style={{ width: `${uploadProgress}%` }}
-                />
-              </div>
-              <p className="text-[10px] text-stone-400">Saving and preparing audio player...</p>
-            </div>
-          ) : (
-            <div className="flex flex-col sm:flex-row items-center justify-between gap-3">
-              <div className="flex items-center gap-3">
-                <div className="w-10 h-10 rounded-xl bg-rose-100 text-rose-700 flex items-center justify-center flex-shrink-0">
-                  <Music2 className="w-5 h-5" />
-                </div>
-                <div>
-                  <p className="text-xs font-bold text-stone-800">
-                    {content.audioUrl ? 'Replace / Change MP3 File' : 'Upload MP3 Voice Note / Song'}
-                  </p>
-                  <p className="text-[10px] text-stone-400">
-                    Select any .mp3, .wav, or .m4a file from your device
-                  </p>
-                </div>
-              </div>
-
-              <button
-                type="button"
-                onClick={() => fileInputRef.current?.click()}
-                className="px-4 py-2 rounded-xl bg-rose-600 text-white font-semibold text-xs hover:bg-rose-700 shadow-xs flex items-center gap-1.5 cursor-pointer transition"
-              >
-                <Upload className="w-3.5 h-3.5" />
-                <span>Choose MP3 File</span>
-              </button>
-            </div>
-          )}
-
-          {uploadError && (
-            <div className="mt-3 p-2 bg-rose-50 border border-rose-200 rounded-lg text-xs text-rose-700 flex items-center gap-2">
-              <AlertCircle className="w-3.5 h-3.5 flex-shrink-0" />
-              <span>{uploadError}</span>
-            </div>
-          )}
+        {/* Sub-Tabs: Upload File / Soundtrack Presets / Dedication Note */}
+        <div className="flex items-center gap-1.5 p-1.5 bg-stone-100/80 rounded-2xl border border-stone-200/80 mt-4 text-xs font-semibold">
+          <button
+            type="button"
+            onClick={() => setActiveSubTab('upload')}
+            className={`flex-1 py-2 rounded-xl transition cursor-pointer flex items-center justify-center gap-1.5 ${
+              activeSubTab === 'upload'
+                ? 'bg-white text-stone-900 shadow-xs border border-stone-200 font-bold'
+                : 'text-stone-600 hover:text-stone-900'
+            }`}
+          >
+            <Upload className="w-3.5 h-3.5" />
+            <span>Upload Audio</span>
+          </button>
+          <button
+            type="button"
+            onClick={() => setActiveSubTab('presets')}
+            className={`flex-1 py-2 rounded-xl transition cursor-pointer flex items-center justify-center gap-1.5 ${
+              activeSubTab === 'presets'
+                ? 'bg-white text-stone-900 shadow-xs border border-stone-200 font-bold'
+                : 'text-stone-600 hover:text-stone-900'
+            }`}
+          >
+            <Radio className="w-3.5 h-3.5" />
+            <span>Curated Presets</span>
+          </button>
+          <button
+            type="button"
+            onClick={() => setActiveSubTab('dedication')}
+            className={`flex-1 py-2 rounded-xl transition cursor-pointer flex items-center justify-center gap-1.5 ${
+              activeSubTab === 'dedication'
+                ? 'bg-white text-stone-900 shadow-xs border border-stone-200 font-bold'
+                : 'text-stone-600 hover:text-stone-900'
+            }`}
+          >
+            <Heart className="w-3.5 h-3.5" />
+            <span>Dedication & Details</span>
+          </button>
         </div>
 
-        {/* Active Audio Preview Player */}
-        {content.audioUrl && (
-          <div className="p-3.5 rounded-xl bg-rose-50/80 border border-rose-200 space-y-2">
-            <div className="flex items-center justify-between">
-              <span className="text-xs font-bold text-stone-800 flex items-center gap-1.5">
-                <CheckCircle2 className="w-4 h-4 text-emerald-600" />
-                <span>Audio Uploaded Successfully</span>
-              </span>
-              <button
-                type="button"
-                onClick={toggleAudioPreview}
-                className="px-3 py-1 rounded-lg bg-white border border-rose-300 text-rose-800 text-xs font-semibold hover:bg-rose-100 flex items-center gap-1 cursor-pointer transition shadow-2xs"
-              >
-                {isPlaying ? <Pause className="w-3.5 h-3.5 text-rose-600" /> : <Play className="w-3.5 h-3.5 text-rose-600" />}
-                <span>{isPlaying ? 'Pause Preview' : 'Test Audio'}</span>
-              </button>
+        {/* Tab 1: Upload Custom Audio */}
+        {activeSubTab === 'upload' && (
+          <div className="space-y-4 mt-5">
+            {/* Drag & Drop Audio Upload Box */}
+            <div
+              onDragOver={(e) => {
+                e.preventDefault();
+                setIsDragOver(true);
+              }}
+              onDragLeave={() => setIsDragOver(false)}
+              onDrop={(e) => {
+                e.preventDefault();
+                setIsDragOver(false);
+                const file = e.dataTransfer.files?.[0];
+                if (file) handleAudioFile(file);
+              }}
+              className={`p-6 rounded-2xl border-2 border-dashed transition-all text-center ${
+                isDragOver
+                  ? 'border-amber-500 bg-amber-50/70 scale-[1.01]'
+                  : 'border-amber-300/80 bg-white hover:border-amber-400'
+              }`}
+            >
+              <input
+                type="file"
+                ref={fileInputRef}
+                accept="audio/mp3,audio/mpeg,audio/wav,audio/ogg,audio/m4a,audio/*"
+                className="hidden"
+                onChange={(e) => {
+                  const file = e.target.files?.[0];
+                  if (file) handleAudioFile(file);
+                }}
+              />
+
+              {uploading ? (
+                <div className="py-6 space-y-3">
+                  <div className="w-10 h-10 mx-auto border-3 border-amber-200 border-t-amber-600 rounded-full animate-spin" />
+                  <div>
+                    <p className="text-sm font-bold text-amber-950">
+                      Uploading Soundtrack ({uploadProgress}%)...
+                    </p>
+                    <p className="text-xs text-stone-500 mt-0.5">
+                      Preparing audio stream and visualizer for the recipient
+                    </p>
+                  </div>
+                  <div className="w-56 max-w-full mx-auto h-2 bg-amber-100 rounded-full overflow-hidden">
+                    <div
+                      className="h-full bg-gradient-to-r from-amber-600 to-rose-600 transition-all duration-300"
+                      style={{ width: `${uploadProgress}%` }}
+                    />
+                  </div>
+                </div>
+              ) : (
+                <div className="space-y-3">
+                  <div className="w-12 h-12 rounded-2xl bg-amber-100 text-amber-800 flex items-center justify-center mx-auto shadow-xs">
+                    <FileAudio className="w-6 h-6" />
+                  </div>
+                  <div>
+                    <h4 className="text-sm font-bold text-stone-900">
+                      {hasAudio ? 'Replace Current Soundtrack' : 'Drop your audio file here'}
+                    </h4>
+                    <p className="text-xs text-stone-500 mt-0.5">
+                      Supports MP3, WAV, M4A, AAC, and OGG up to 50MB
+                    </p>
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={() => fileInputRef.current?.click()}
+                    className="px-5 py-2.5 rounded-full bg-gradient-to-r from-amber-600 to-rose-600 hover:from-amber-700 hover:to-rose-700 text-white text-xs font-bold shadow-md cursor-pointer transition transform hover:-translate-y-0.5"
+                  >
+                    Select Audio File
+                  </button>
+                </div>
+              )}
+
+              {uploadError && (
+                <div className="mt-4 p-3 bg-rose-50 border border-rose-200 rounded-xl text-xs text-rose-700 flex items-center gap-2 text-left">
+                  <AlertCircle className="w-4 h-4 flex-shrink-0" />
+                  <span>{uploadError}</span>
+                </div>
+              )}
             </div>
-            <audio src={getMediaUrl(content.audioUrl)} controls className="w-full h-8 mt-1" />
+
+            {/* Active Audio Card Preview */}
+            {hasAudio && (
+              <div className="p-4 rounded-2xl bg-white border border-amber-200 shadow-sm space-y-3">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2.5">
+                    <span className="w-7 h-7 rounded-lg bg-emerald-100 text-emerald-700 flex items-center justify-center">
+                      <CheckCircle2 className="w-4 h-4" />
+                    </span>
+                    <div>
+                      <span className="text-xs font-bold text-stone-900 block leading-tight">
+                        {content.title || 'Soundtrack Loaded'}
+                      </span>
+                      <span className="text-[10px] text-stone-400">
+                        Duration: {previewDuration || content.durationSeconds || 'Full Track'}
+                      </span>
+                    </div>
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={toggleAudioPreview}
+                    className="px-3.5 py-1.5 rounded-xl bg-amber-100 hover:bg-amber-200 text-amber-900 text-xs font-semibold flex items-center gap-1.5 cursor-pointer transition"
+                  >
+                    {isPlaying ? <Pause className="w-3.5 h-3.5 fill-current" /> : <Play className="w-3.5 h-3.5 fill-current" />}
+                    <span>{isPlaying ? 'Pause Preview' : 'Test Audio'}</span>
+                  </button>
+                </div>
+
+                <audio
+                  src={getMediaUrl(content.audioUrl)}
+                  controls
+                  className="w-full h-8 rounded-lg"
+                />
+              </div>
+            )}
           </div>
         )}
 
-        {/* Play Background to Receiver Toggle */}
-        <div className="p-3.5 rounded-xl bg-amber-50/70 border border-amber-200 flex items-start gap-3">
+        {/* Tab 2: Curated Presets Library */}
+        {activeSubTab === 'presets' && (
+          <div className="space-y-3 mt-5">
+            <p className="text-xs text-stone-500">
+              Pick a soundtrack from our curated royalty-free collection. Perfect if you don't have a personal audio file ready!
+            </p>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+              {SOUNDTRACK_PRESETS.map((p) => {
+                const isSelected = content.audioUrl === p.url;
+                return (
+                  <div
+                    key={p.id}
+                    className={`p-3.5 rounded-2xl border text-left transition-all flex flex-col justify-between gap-2 ${
+                      isSelected
+                        ? 'border-amber-600 bg-amber-50/80 shadow-xs'
+                        : 'border-stone-200 bg-white hover:border-amber-300'
+                    }`}
+                  >
+                    <div>
+                      <div className="flex items-center justify-between">
+                        <span className="text-[10px] font-bold uppercase tracking-wider text-amber-800 bg-amber-100/70 px-2 py-0.5 rounded-full">
+                          {p.genre}
+                        </span>
+                        <span className="text-[10px] text-stone-400 font-mono">{p.duration}</span>
+                      </div>
+                      <h4 className="font-bold text-xs text-stone-900 mt-1.5">{p.title}</h4>
+                      <p className="text-[11px] text-stone-500">{p.artist}</p>
+                    </div>
+
+                    <div className="flex items-center gap-2 pt-1 border-t border-stone-100">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          updateField('audioUrl', p.url);
+                          updateField('title', p.title);
+                          updateField('durationSeconds', p.duration);
+                          updateField('playAsBackground', true);
+                        }}
+                        className={`flex-1 py-1.5 rounded-xl text-xs font-bold cursor-pointer transition ${
+                          isSelected
+                            ? 'bg-amber-700 text-white shadow-2xs'
+                            : 'bg-stone-100 text-stone-700 hover:bg-stone-200'
+                        }`}
+                      >
+                        {isSelected ? '✓ Selected Soundtrack' : 'Use This Track'}
+                      </button>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        )}
+
+        {/* Tab 3: Dedication & Song Details */}
+        {activeSubTab === 'dedication' && (
+          <div className="space-y-4 mt-5">
+            <div>
+              <div className="flex items-center justify-between">
+                <label className="text-xs font-bold text-stone-700">Soundtrack Display Title</label>
+                <TranslateButton value={content.title || ''} onTranslated={(t) => updateField('title', t)} />
+              </div>
+              <input
+                type="text"
+                value={content.title || ''}
+                placeholder="e.g. Our Anthem / A Song for Your Day"
+                onChange={(e) => updateField('title', e.target.value)}
+                className="w-full mt-1.5 px-3 py-2 rounded-xl border border-stone-300 text-xs bg-white text-stone-800 focus:ring-2 focus:ring-amber-500 focus:outline-none"
+              />
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div>
+                <label className="text-xs font-bold text-stone-700">Sender / Artist Dedication</label>
+                <input
+                  type="text"
+                  value={content.senderName || ''}
+                  placeholder="e.g. Dedicated by Priya"
+                  onChange={(e) => updateField('senderName', e.target.value)}
+                  className="w-full mt-1.5 px-3 py-2 rounded-xl border border-stone-300 text-xs bg-white text-stone-800"
+                />
+              </div>
+
+              <div>
+                <label className="text-xs font-bold text-stone-700">Duration Tag</label>
+                <input
+                  type="text"
+                  value={content.durationSeconds || ''}
+                  placeholder="e.g. 2:45"
+                  onChange={(e) => updateField('durationSeconds', e.target.value)}
+                  className="w-full mt-1.5 px-3 py-2 rounded-xl border border-stone-300 text-xs bg-white text-stone-800"
+                />
+              </div>
+            </div>
+
+            <div>
+              <div className="flex items-center justify-between">
+                <label className="text-xs font-bold text-stone-700">Heartfelt Dedication Note / Quote</label>
+                <TranslateButton value={content.transcription || ''} onTranslated={(t) => updateField('transcription', t)} />
+              </div>
+              <textarea
+                rows={3}
+                value={content.transcription || ''}
+                placeholder="Write why you chose this track or share words to accompany the music..."
+                onChange={(e) => updateField('transcription', e.target.value)}
+                className="w-full mt-1.5 p-3 rounded-xl border border-stone-300 text-xs bg-white text-stone-800 focus:ring-2 focus:ring-amber-500 focus:outline-none leading-relaxed"
+              />
+            </div>
+          </div>
+        )}
+
+        {/* Global Play in Background Switcher */}
+        <div className="mt-5 p-4 rounded-2xl bg-amber-100/60 border border-amber-300/80 flex items-start gap-3">
           <input
             type="checkbox"
             id="playAsBackgroundCheckbox"
             checked={content.playAsBackground !== false}
             onChange={(e) => updateField('playAsBackground', e.target.checked)}
-            className="mt-0.5 w-4 h-4 text-amber-600 rounded border-stone-300 focus:ring-amber-500 cursor-pointer"
+            className="mt-0.5 w-4 h-4 text-amber-700 rounded border-stone-300 focus:ring-amber-500 cursor-pointer accent-amber-700"
           />
           <label htmlFor="playAsBackgroundCheckbox" className="text-xs text-stone-700 cursor-pointer">
-            <span className="font-bold text-stone-900 block">
-              🎵 Play in background for receiver
+            <span className="font-bold text-amber-950 block">
+              🎵 Stream in background for receiver
             </span>
-            <span className="text-[11px] text-stone-500">
-              When enabled, this MP3 will automatically start playing in the background as the receiver steps into their birthday journey.
+            <span className="text-[11px] text-stone-600">
+              When enabled, this melody plays continuously in the background while the recipient explores their entire birthday journey.
             </span>
           </label>
         </div>
 
-        {/* Text Details */}
-        <div>
-          <div className="flex items-center justify-between">
-            <label className="text-xs font-semibold text-stone-700">Card Title</label>
-            <TranslateButton value={content.title || ''} onTranslated={(t) => updateField('title', t)} />
-          </div>
-          <input
-            type="text"
-            value={content.title || ''}
-            placeholder="e.g. A Voice Wish For You"
-            onChange={(e) => updateField('title', e.target.value)}
-            className="w-full mt-1.5 px-3 py-2 rounded-xl border border-stone-300 text-xs bg-white text-stone-800 focus:ring-2 focus:ring-rose-400 focus:outline-none"
-          />
-        </div>
-
-        <div className="grid grid-cols-2 gap-3">
-          <div>
-            <label className="text-xs font-semibold text-stone-700">Sender Signature</label>
-            <input
-              type="text"
-              value={content.senderName || ''}
-              placeholder="e.g. With love, from Priya"
-              onChange={(e) => updateField('senderName', e.target.value)}
-              className="w-full mt-1 px-3 py-1.5 rounded-lg border border-stone-300 text-xs bg-white text-stone-800"
-            />
-          </div>
-          <div>
-            <label className="text-xs font-semibold text-stone-700">Duration Label</label>
-            <input
-              type="text"
-              value={content.durationSeconds || ''}
-              placeholder="e.g. 0:42"
-              onChange={(e) => updateField('durationSeconds', e.target.value)}
-              className="w-full mt-1 px-3 py-1.5 rounded-lg border border-stone-300 text-xs bg-white text-stone-800"
-            />
-          </div>
-        </div>
-
-        <div>
-          <div className="flex items-center justify-between">
-            <label className="text-xs font-semibold text-stone-700">Message Transcription</label>
-            <TranslateButton value={content.transcription || ''} onTranslated={(t) => updateField('transcription', t)} />
-          </div>
-          <textarea
-            rows={3}
-            value={content.transcription || ''}
-            placeholder="Type what you said in the audio — shown as an optional quote to the recipient."
-            onChange={(e) => updateField('transcription', e.target.value)}
-            className="w-full mt-1.5 p-2.5 rounded-xl border border-stone-300 text-xs bg-white text-stone-800 focus:ring-2 focus:ring-rose-400 focus:outline-none leading-relaxed"
-          />
-        </div>
-
-        <div>
-          <label className="text-xs font-semibold text-stone-700">Recorded Date Label</label>
-          <input
-            type="text"
-            value={content.recordedDate || ''}
-            placeholder="e.g. Today, or Last night"
-            onChange={(e) => updateField('recordedDate', e.target.value)}
-            className="w-full mt-1.5 px-3 py-2 rounded-xl border border-stone-300 text-xs bg-white text-stone-800"
-          />
-        </div>
-
-        {/* External audio URL or Library picker option */}
-        <div className="pt-2 border-t border-rose-200/50">
+        {/* External URL or Media Library Picker */}
+        <div className="mt-4 pt-4 border-t border-amber-200/60">
           <MediaPickButton
             fieldKey="audioUrl"
-            label="Or enter direct audio URL / pick from library:"
+            label="Or enter direct MP3 / Audio link:"
             filterType="audio"
             currentUrl={content.audioUrl}
-            placeholder="https://example.com/my-voice-note.mp3"
-            helpText="Optionally paste a direct .mp3 link if hosted elsewhere."
+            placeholder="https://example.com/soundtrack.mp3"
+            helpText="Optionally paste a direct audio URL or pick from your uploaded media library."
           />
         </div>
       </div>
@@ -1039,7 +1231,8 @@ const LiveVoiceRecorder: React.FC<{
   updateField: (field: string, value: any) => void;
   experienceId: string;
   moduleId?: string;
-}> = ({ content, updateField, experienceId, moduleId }) => {
+  MediaPickButton?: any;
+}> = ({ content, updateField, experienceId, moduleId, MediaPickButton }) => {
   const [recordingState, setRecordingState] = useState<'idle' | 'recording' | 'recorded' | 'uploading'>('idle');
   const [recordingSeconds, setRecordingSeconds] = useState(0);
   const [uploadProgress, setUploadProgress] = useState(0);
@@ -1140,7 +1333,7 @@ const LiveVoiceRecorder: React.FC<{
           </span>
         </div>
         <p className="text-xs text-stone-500">
-          Record your voice directly in the browser. Hit record, speak your birthday wish, then upload it to your experience.
+          Record your voice live in the browser, preview it, and upload it directly to your recipient’s experience.
         </p>
 
         {/* Recording Controls */}
@@ -1293,6 +1486,19 @@ const LiveVoiceRecorder: React.FC<{
             />
           </div>
         </div>
+
+        {MediaPickButton && (
+          <div className="pt-2 border-t border-fuchsia-200/50">
+            <MediaPickButton
+              fieldKey="audioUrl"
+              label="Or upload an audio file directly / pick from media library:"
+              filterType="audio"
+              currentUrl={content.audioUrl}
+              placeholder="https://example.com/audio.mp3"
+              helpText="You can also upload an existing recorded audio file if preferred."
+            />
+          </div>
+        )}
       </div>
     </div>
   );
@@ -1707,7 +1913,7 @@ const ModuleFormInspector: React.FC<{
       );
 
     case 'MUSIC':
-      // Issue 5.1: Personal Soundtrack → now has Voice Note From My Heart upload functions
+      // Personal Soundtrack → Voice Note From My Heart functions (upload MP3 voice note / song)
       return (
         <VoiceNoteEditor
           content={content}
@@ -1719,13 +1925,14 @@ const ModuleFormInspector: React.FC<{
       );
 
     case 'VOICE':
-      // Issue 5.2: Voice Note From My Heart → now has live recording feature
+      // Voice Note From My Heart → Live Voice Record & upload option
       return (
         <LiveVoiceRecorder
           content={content}
           updateField={updateField}
           experienceId={experienceId}
           moduleId={module._id}
+          MediaPickButton={MediaPickButton}
         />
       );
 
