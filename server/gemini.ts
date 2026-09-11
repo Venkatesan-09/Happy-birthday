@@ -28,13 +28,87 @@ export interface AIGenerateParams {
 
 export interface TranslateParams {
   text: string;
-  targetLanguage: 'english' | 'tamil' | 'telugu';
+  targetLanguage: 'english' | 'tamil' | 'telugu' | string;
   sourceLanguage?: string;
+}
+
+// In-memory translation cache to avoid repeated network calls
+const translationCache = new Map<string, string>();
+
+/**
+ * Fallback to MyMemory translation API (high quality, supports Tamil & Telugu)
+ */
+async function translateWithMyMemory(text: string, targetLang: string): Promise<string | null> {
+  try {
+    const langCodeMap: Record<string, string> = {
+      english: 'en',
+      tamil: 'ta',
+      telugu: 'te',
+    };
+    const targetCode = langCodeMap[targetLang.toLowerCase()] || targetLang;
+    const url = `https://api.mymemory.translated.net/get?q=${encodeURIComponent(text)}&langpair=autodetect|${targetCode}`;
+    
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 6000);
+    
+    const res = await fetch(url, { signal: controller.signal });
+    clearTimeout(timeoutId);
+    
+    if (res.ok) {
+      const data = await res.json();
+      const translated = data?.responseData?.translatedText;
+      if (translated && typeof translated === 'string' && !translated.startsWith('MYMEMORY WARNING')) {
+        return translated.trim();
+      }
+    }
+  } catch (err: any) {
+    console.warn('[Translate Fallback 1] MyMemory error:', err.message);
+  }
+  return null;
+}
+
+/**
+ * Fallback to Google Translate public endpoint
+ */
+async function translateWithGooglePublic(text: string, targetLang: string): Promise<string | null> {
+  try {
+    const langCodeMap: Record<string, string> = {
+      english: 'en',
+      tamil: 'ta',
+      telugu: 'te',
+    };
+    const targetCode = langCodeMap[targetLang.toLowerCase()] || targetLang;
+    const url = `https://translate.googleapis.com/translate_a/single?client=gtx&sl=auto&tl=${targetCode}&dt=t&q=${encodeURIComponent(text)}`;
+    
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 6000);
+    
+    const res = await fetch(url, { signal: controller.signal });
+    clearTimeout(timeoutId);
+    
+    if (res.ok) {
+      const data = await res.json();
+      if (Array.isArray(data) && Array.isArray(data[0])) {
+        const fullTranslation = data[0].map((item: any) => item[0]).join('');
+        if (fullTranslation.trim()) return fullTranslation.trim();
+      }
+    }
+  } catch (err: any) {
+    console.warn('[Translate Fallback 2] Google Translate public error:', err.message);
+  }
+  return null;
 }
 
 export async function translateText(params: TranslateParams): Promise<{ result: string; language: string }> {
   const { text, targetLanguage, sourceLanguage } = params;
-  const client = getGenAIClient();
+  if (!text || !text.trim()) {
+    return { result: text, language: targetLanguage };
+  }
+
+  const cacheKey = `${targetLanguage}:${text.trim()}`;
+  if (translationCache.has(cacheKey)) {
+    return { result: translationCache.get(cacheKey)!, language: targetLanguage };
+  }
 
   const languageMap: Record<string, string> = {
     english: 'English',
@@ -43,12 +117,11 @@ export async function translateText(params: TranslateParams): Promise<{ result: 
   };
 
   const targetLangLabel = languageMap[targetLanguage] || targetLanguage;
+  const client = getGenAIClient();
 
-  if (!client) {
-    return { result: text, language: targetLanguage };
-  }
-
-  const prompt = `You are a precise translation assistant for DearYou, a birthday experience app.
+  // 1. Try Gemini API first if available with a timeout
+  if (client) {
+    const prompt = `You are a precise translation assistant for DearYou, a birthday experience app.
 
 Translate the following text to ${targetLangLabel}.
 ${sourceLanguage ? `Source language: ${sourceLanguage}` : ''}
@@ -63,17 +136,40 @@ Rules:
 Text to translate:
 ${text}`;
 
-  try {
-    const response = await client.models.generateContent({
-      model: 'gemini-3.6-flash',
-      contents: prompt,
-    });
-    const translated = response.text?.trim() || text;
-    return { result: translated, language: targetLanguage };
-  } catch (err: any) {
-    console.error('Translation error:', err);
-    return { result: text, language: targetLanguage };
+    try {
+      const response = await Promise.race([
+        client.models.generateContent({
+          model: 'gemini-3.6-flash',
+          contents: prompt,
+        }),
+        new Promise<never>((_, reject) => setTimeout(() => reject(new Error('Gemini API timeout')), 5000))
+      ]);
+      const translated = response.text?.trim();
+      if (translated) {
+        translationCache.set(cacheKey, translated);
+        return { result: translated, language: targetLanguage };
+      }
+    } catch (err: any) {
+      console.warn('[Translate] Gemini API translation notice:', err.message);
+    }
   }
+
+  // 2. Fallback to MyMemory translation engine
+  const myMemoryResult = await translateWithMyMemory(text, targetLanguage);
+  if (myMemoryResult) {
+    translationCache.set(cacheKey, myMemoryResult);
+    return { result: myMemoryResult, language: targetLanguage };
+  }
+
+  // 3. Fallback to Google Translate endpoint
+  const googleResult = await translateWithGooglePublic(text, targetLanguage);
+  if (googleResult) {
+    translationCache.set(cacheKey, googleResult);
+    return { result: googleResult, language: targetLanguage };
+  }
+
+  // 4. Return original if all providers unavailable
+  return { result: text, language: targetLanguage };
 }
 
 export async function generateAICentent(params: AIGenerateParams): Promise<{ result: string; provider: string; model: string }> {

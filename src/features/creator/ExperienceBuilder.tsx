@@ -884,6 +884,12 @@ const VoiceNoteEditor: React.FC<{
   };
 
   useEffect(() => {
+    // Reset preview audio when the audio URL changes
+    if (audioPreviewRef.current) {
+      audioPreviewRef.current.pause();
+      audioPreviewRef.current = null;
+    }
+    setIsPlaying(false);
     return () => {
       if (audioPreviewRef.current) {
         audioPreviewRef.current.pause();
@@ -1068,11 +1074,19 @@ const VoiceNoteEditor: React.FC<{
                   </button>
                 </div>
 
+                {/* Native Audio Player for Creator Preview */}
                 <audio
+                  key={content.audioUrl}
                   src={getMediaUrl(content.audioUrl)}
                   controls
-                  className="w-full h-8 rounded-lg"
+                  className="w-full rounded-lg"
+                  style={{ height: 40 }}
                 />
+
+                <p className="text-[10px] text-emerald-700 font-semibold flex items-center gap-1">
+                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse inline-block" />
+                  Will play in receiver's background when they open the experience
+                </p>
               </div>
             )}
           </div>

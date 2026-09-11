@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import confetti from 'canvas-confetti';
 import {
@@ -29,6 +29,7 @@ import { TeddyMascot } from '../../components/TeddyMascot';
 import { MiniGames } from '../games/MiniGames';
 import { InteractiveUniverse } from '../universe/InteractiveUniverse';
 import { getMediaUrl } from '../../utils/mediaUrl';
+import { CelebrationEffects } from '../../components/CelebrationEffects';
 
 interface ExperienceRendererProps {
   experience: Experience;
@@ -59,10 +60,16 @@ export const ExperienceRenderer: React.FC<ExperienceRendererProps> = ({
       String((m.content as any)?.audioUrl).trim().length > 0
   );
 
+  // Always treat uploaded audio as background if playAsBackground is not explicitly false
+  const audioModuleUrl = audioNoteModule
+    ? ((audioNoteModule.content as any)?.playAsBackground !== false
+        ? (audioNoteModule.content as any)?.audioUrl
+        : null)
+    : null;
+
   const rawBgAudio =
     (experience.settings as any)?.backgroundMusicUrl ||
-    ((audioNoteModule?.content as any)?.playAsBackground !== false ? (audioNoteModule?.content as any)?.audioUrl : null) ||
-    (audioNoteModule?.content as any)?.audioUrl;
+    audioModuleUrl;
   const backgroundAudioUrl = rawBgAudio && typeof rawBgAudio === 'string' && rawBgAudio.trim().length > 0 ? getMediaUrl(rawBgAudio.trim()) : null;
 
   const bgTrackTitle =
@@ -161,13 +168,41 @@ export const ExperienceRenderer: React.FC<ExperienceRendererProps> = ({
     }
   };
 
-  // Start background audio on user interaction anywhere on the screen
+  // Ensure audio instance stays updated with current backgroundAudioUrl
   React.useEffect(() => {
-    if (!backgroundAudioUrl) return;
+    if (bgAudioRef.current) {
+      bgAudioRef.current.pause();
+      bgAudioRef.current = null;
+    }
+
+    if (!backgroundAudioUrl) {
+      setIsPlayingAudio(false);
+      return;
+    }
+
+    const audio = new Audio(backgroundAudioUrl);
+    audio.loop = true;
+    audio.volume = audioVolume;
+    audio.preload = 'auto';
+
+    audio.onplaying = () => {
+      setIsPlayingAudio(true);
+      setAudioLoadError(null);
+    };
+    audio.onpause = () => {
+      setIsPlayingAudio(false);
+    };
+    audio.onerror = (e) => {
+      console.warn('[DearYou Audio] Custom soundtrack load error:', e);
+      setAudioLoadError('Unable to stream uploaded audio');
+      SoundEffects.startAmbientTrack();
+      setIsPlayingAudio(true);
+    };
+    bgAudioRef.current = audio;
 
     const handleFirstInteraction = () => {
-      if (!bgAudioRef.current || bgAudioRef.current.paused) {
-        startBackgroundAudio();
+      if (bgAudioRef.current && bgAudioRef.current.paused && !isAudioMuted) {
+        bgAudioRef.current.play().then(() => setIsPlayingAudio(true)).catch(() => {});
       }
     };
 
@@ -199,7 +234,10 @@ export const ExperienceRenderer: React.FC<ExperienceRendererProps> = ({
   };
 
   return (
-    <div className={`min-h-screen bg-gradient-to-b ${experience.theme?.background || 'from-[#faf6f0] to-[#f0e4d0]'} text-[#2c2623] pb-24 transition-colors duration-500`}>
+    <div className={`min-h-screen bg-gradient-to-b ${experience.theme?.background || 'from-[#faf6f0] to-[#f0e4d0]'} text-[#2c2623] pb-24 transition-colors duration-500 relative overflow-x-hidden`}>
+      {/* Background Celebration Elements: Crackers Blasting, Flowing Flowers & Hearts */}
+      <CelebrationEffects initialMode="all" showControls={true} />
+
       {/* Ultra-Modern Floating Ambient Soundtrack Player Bar */}
       <div className="fixed top-3 right-3 sm:top-4 sm:right-4 z-40 flex items-center gap-1.5 sm:gap-2 bg-white/95 backdrop-blur-md px-3 sm:px-4 py-2 rounded-full border border-amber-300/80 shadow-lg shadow-amber-950/5">
         <button
@@ -286,8 +324,8 @@ export const ExperienceRenderer: React.FC<ExperienceRendererProps> = ({
         </button>
       </div>
 
-      {/* Render all enabled modules sequentially */}
-      <div className="space-y-16 pt-8 max-w-4xl mx-auto px-4 sm:px-6">
+      {/* Render all enabled modules sequentially (clearly above background celebration effects) */}
+      <div className="space-y-16 pt-8 max-w-4xl mx-auto px-4 sm:px-6 relative z-10">
         {modules.map((mod, idx) => (
           <motion.section
             key={mod._id || idx}
@@ -589,10 +627,10 @@ const MusicModule: React.FC<{
   isBackgroundPlaying?: boolean;
   onToggleBackground?: () => void;
 }> = ({ content, isBackgroundPlaying = false, onToggleBackground }) => {
-  const [localPlaying, setLocalPlaying] = useState(false);
-  const [currentTime, setCurrentTime] = useState(0);
-  const [duration, setDuration] = useState(0);
-  const [isSeeking, setIsSeeking] = useState(false);
+  const [localPlaying, setLocalPlaying] = React.useState(false);
+  const [currentTime, setCurrentTime] = React.useState(0);
+  const [duration, setDuration] = React.useState(0);
+  const [isSeeking, setIsSeeking] = React.useState(false);
   const audioRef = React.useRef<HTMLAudioElement | null>(null);
 
   const hasCustomAudio = !!(content.audioUrl && String(content.audioUrl).trim());
@@ -612,34 +650,39 @@ const MusicModule: React.FC<{
     return `${m}:${s < 10 ? '0' : ''}${s}`;
   };
 
-  // Local audio management
-  useEffect(() => {
+  // Local audio management (use React.useEffect to avoid bundler scope issues)
+  React.useEffect(() => {
     if (!resolvedAudioUrl) return;
 
-    if (!audioRef.current) {
-      const audio = new Audio(resolvedAudioUrl);
-      audio.loop = true;
-      audio.preload = 'metadata';
-
-      audio.ontimeupdate = () => {
-        if (!isSeeking && audioRef.current) {
-          setCurrentTime(audioRef.current.currentTime);
-        }
-      };
-      audio.onloadedmetadata = () => {
-        if (audioRef.current && audioRef.current.duration) {
-          setDuration(audioRef.current.duration);
-        }
-      };
-      audio.onended = () => setLocalPlaying(false);
-      audioRef.current = audio;
+    // Reset and recreate audio when URL changes
+    if (audioRef.current) {
+      audioRef.current.pause();
+      audioRef.current = null;
     }
 
-    return () => {
+    const audio = new Audio(resolvedAudioUrl);
+    audio.loop = true;
+    audio.preload = 'metadata';
+
+    audio.ontimeupdate = () => {
       if (audioRef.current) {
-        audioRef.current.pause();
-        audioRef.current = null;
+        setCurrentTime(audioRef.current.currentTime);
       }
+    };
+    audio.onloadedmetadata = () => {
+      if (audioRef.current && audioRef.current.duration) {
+        setDuration(audioRef.current.duration);
+      }
+    };
+    audio.onended = () => setLocalPlaying(false);
+    audioRef.current = audio;
+
+    return () => {
+      audio.pause();
+      audio.ontimeupdate = null;
+      audio.onloadedmetadata = null;
+      audio.onended = null;
+      audioRef.current = null;
     };
   }, [resolvedAudioUrl]);
 
