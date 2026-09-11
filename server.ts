@@ -37,14 +37,30 @@ app.get('/api/health', (_req: Request, res: Response) => {
 
 // Network info - provides local network IP & public URL for devices
 app.get('/api/network-info', (_req: Request, res: Response) => {
+  // Dynamically detect LAN IP using os.networkInterfaces()
+  const os = require('os');
+  const interfaces = os.networkInterfaces();
+  const lanIps: string[] = [];
+
+  for (const name of Object.keys(interfaces)) {
+    for (const iface of (interfaces[name] || [])) {
+      if (iface.family === 'IPv4' && !iface.internal) {
+        lanIps.push(iface.address);
+      }
+    }
+  }
+
+  const primaryLanIp = lanIps[0] || '127.0.0.1';
+
   res.json({
     success: true,
     data: {
-      ip: '127.0.0.1',
-      allIps: ['127.0.0.1'],
+      ip: primaryLanIp,
+      allIps: lanIps.length > 0 ? lanIps : ['127.0.0.1'],
       publicUrl: config.clientUrl && !config.clientUrl.includes('localhost') ? config.clientUrl : null,
       lanPort: config.port,
-      frontendPort: 5173,
+      // No separate frontendPort — app runs on a single unified Express+Vite server
+      frontendPort: config.port,
     },
   });
 });
@@ -61,8 +77,8 @@ app.use('/api/ai', aiRoutes);
 app.use('/api/media', mediaRoutes);
 app.use('/api/analytics', analyticsRoutes);
 
-// Centralized error handling middleware
-app.use(errorHandler);
+// Centralized error handling middleware (registered AFTER routes, BEFORE Vite)
+// This ensures API errors are caught but frontend SPA routes still get served
 
 // Vite Frontend Integration
 async function startServer() {
@@ -78,6 +94,7 @@ async function startServer() {
       server: { middlewareMode: true },
       appType: 'spa',
     });
+    // Register Vite BEFORE the error handler so SPA routes work
     app.use(vite.middlewares);
   } else {
     const distPath = path.join(process.cwd(), 'dist');
@@ -86,6 +103,9 @@ async function startServer() {
       res.sendFile(path.join(distPath, 'index.html'));
     });
   }
+
+  // Error handler must come AFTER all routes including Vite
+  app.use(errorHandler);
 
   app.listen(config.port, '0.0.0.0', () => {
     console.log(`[DearYou] Production-grade server running on http://0.0.0.0:${config.port}`);

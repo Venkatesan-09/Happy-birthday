@@ -62,8 +62,9 @@ export const ShareModal: React.FC<ShareModalProps> = ({
   }, [isOpen, isProduction]);
 
   // Compute URL based on target mode (LAN IP, Public tunnel, or localhost)
-  const frontendPort = 5173;
-  const protocol = 'http';
+  // Use the ACTUAL port the app is served on (not hardcoded 5173)
+  const currentPort = window.location.port || (window.location.protocol === 'https:' ? '443' : '80');
+  const protocol = window.location.protocol.replace(':', '');
 
   let baseOrigin = window.location.origin;
   if (isProduction || linkMode === 'public') {
@@ -71,7 +72,7 @@ export const ShareModal: React.FC<ShareModalProps> = ({
   } else if (linkMode === 'lan') {
     const hostIp = customHost.trim() || detectedLanIp;
     if (hostIp) {
-      baseOrigin = hostIp.startsWith('http') ? hostIp : `${protocol}://${hostIp}:${frontendPort}`;
+      baseOrigin = hostIp.startsWith('http') ? hostIp : `${protocol}://${hostIp}:${currentPort}`;
     } else {
       baseOrigin = window.location.origin;
     }
@@ -99,8 +100,14 @@ export const ShareModal: React.FC<ShareModalProps> = ({
 
   const handleSavePrivacy = () => {
     if (onUpdatePrivacy) {
+      // Map UI labels to DB schema values (lowercase to match backend enum)
+      const privacyTypeMap: Record<string, string> = {
+        'PUBLIC': 'public',
+        'PASSWORD_PROTECTED': 'password',
+        'UNLISTED': 'unlisted',
+      };
       onUpdatePrivacy({
-        type: privacyType,
+        type: privacyTypeMap[privacyType] || privacyType.toLowerCase(),
         passwordHash: privacyType === 'PASSWORD_PROTECTED' ? password : undefined,
       });
       setSavedPrivacy(true);
