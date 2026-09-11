@@ -29,6 +29,7 @@ import { TeddyMascot } from '../../components/TeddyMascot';
 import { MiniGames } from '../games/MiniGames';
 import { InteractiveUniverse } from '../universe/InteractiveUniverse';
 import { getMediaUrl } from '../../utils/mediaUrl';
+import { CelebrationEffects } from '../../components/CelebrationEffects';
 
 interface ExperienceRendererProps {
   experience: Experience;
@@ -233,7 +234,10 @@ export const ExperienceRenderer: React.FC<ExperienceRendererProps> = ({
   };
 
   return (
-    <div className={`min-h-screen bg-gradient-to-b ${experience.theme?.background || 'from-[#faf6f0] to-[#f0e4d0]'} text-[#2c2623] pb-24 transition-colors duration-500`}>
+    <div className={`min-h-screen bg-gradient-to-b ${experience.theme?.background || 'from-[#faf6f0] to-[#f0e4d0]'} text-[#2c2623] pb-24 transition-colors duration-500 relative overflow-x-hidden`}>
+      {/* Background Celebration Elements: Crackers Blasting, Flowing Flowers & Hearts */}
+      <CelebrationEffects initialMode="all" showControls={true} />
+
       {/* Ultra-Modern Floating Ambient Soundtrack Player Bar */}
       <div className="fixed top-3 right-3 sm:top-4 sm:right-4 z-40 flex items-center gap-1.5 sm:gap-2 bg-white/95 backdrop-blur-md px-3 sm:px-4 py-2 rounded-full border border-amber-300/80 shadow-lg shadow-amber-950/5">
         <button
