@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { Languages, Loader2, Check, Sparkles, AlertCircle } from 'lucide-react';
+import { Languages, Loader2, Check, Sparkles, AlertCircle, Undo2 } from 'lucide-react';
 import { api } from '../services/api';
 
 export type SupportedLang = 'english' | 'tamil' | 'telugu';
@@ -36,6 +36,7 @@ export const TranslateButton: React.FC<TranslateButtonProps> = ({
   const [isTranslating, setIsTranslating] = useState(false);
   const [successLang, setSuccessLang] = useState<SupportedLang | null>(null);
   const [error, setError] = useState('');
+  const [previousText, setPreviousText] = useState<string | null>(null);
   const containerRef = useRef<HTMLDivElement>(null);
 
   // Close popover on outside click
@@ -60,29 +61,55 @@ export const TranslateButton: React.FC<TranslateButtonProps> = ({
     setIsTranslating(true);
     setSuccessLang(null);
 
+    const originalToSave = value;
+
     try {
       const res = await api.ai.translate(value.trim(), lang);
-      if (res && res.result) {
+      if (res && res.result && res.result.trim().length > 0) {
+        // Save previous text so user can undo anytime
+        setPreviousText(originalToSave);
         onTranslated(res.result);
         setSuccessLang(lang);
         setTimeout(() => {
           setSuccessLang(null);
           setIsOpen(false);
-        }, 1200);
+        }, 1500);
       } else {
-        setError('Translation returned empty text. Please try again.');
+        // NEVER destroy user content: retain previous text
+        setError('Translation engine returned incomplete text. Your original text is safe.');
       }
     } catch (err: any) {
       console.error('[TranslateButton error]', err);
-      setError(err?.message || 'Translation failed. Please try again.');
+      setError(err?.message || 'Translation failed. Your text was not modified.');
     } finally {
       setIsTranslating(false);
       setActiveLang(null);
     }
   };
 
+  const handleUndo = () => {
+    if (previousText !== null) {
+      onTranslated(previousText);
+      setPreviousText(null);
+      setError('');
+    }
+  };
+
   return (
-    <div ref={containerRef} className={`relative inline-flex items-center ${className}`}>
+    <div ref={containerRef} className={`relative inline-flex items-center gap-1.5 ${className}`}>
+      {/* Undo Button if translated */}
+      {previousText && previousText !== value && (
+        <button
+          type="button"
+          onClick={handleUndo}
+          title="Undo translation (Restore original)"
+          className="flex items-center gap-1 px-2 py-1 rounded-lg bg-stone-100 hover:bg-stone-200 text-stone-700 text-[11px] font-medium border border-stone-300 transition cursor-pointer"
+        >
+          <Undo2 className="w-3 h-3 text-stone-600" />
+          <span className="hidden sm:inline">Undo</span>
+        </button>
+      )}
+
       {/* Trigger Button */}
       <button
         type="button"
@@ -91,7 +118,7 @@ export const TranslateButton: React.FC<TranslateButtonProps> = ({
           setError('');
           setSuccessLang(null);
         }}
-        title="Translate text into Tamil, Telugu, or English"
+        title="Translate full message into Tamil, Telugu, or English"
         className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-semibold transition-all cursor-pointer shadow-xs select-none ${
           isOpen
             ? 'bg-violet-600 text-white shadow-violet-500/20'
@@ -106,17 +133,19 @@ export const TranslateButton: React.FC<TranslateButtonProps> = ({
       {isOpen && (
         <div
           className="absolute right-0 top-full mt-2 z-50 w-64 rounded-2xl bg-white border border-violet-100 shadow-2xl p-3.5 flex flex-col gap-2.5 animate-in fade-in zoom-in-95 duration-150"
-          style={{ minWidth: '250px' }}
+          style={{ minWidth: '260px' }}
         >
           {/* Header */}
           <div className="flex items-center justify-between border-b border-stone-100 pb-2">
             <div className="flex items-center gap-1.5 text-violet-700">
               <Sparkles className="w-3.5 h-3.5" />
               <span className="text-[11px] font-bold uppercase tracking-wider text-stone-800">
-                1-Click Translate
+                Full-Length Translate
               </span>
             </div>
-            <span className="text-[10px] text-stone-400 font-medium">Instant</span>
+            <span className="text-[10px] text-emerald-600 font-bold bg-emerald-50 px-1.5 py-0.5 rounded-full">
+              No Word Limit
+            </span>
           </div>
 
           <p className="text-[11px] text-stone-500 leading-snug">
@@ -157,11 +186,11 @@ export const TranslateButton: React.FC<TranslateButtonProps> = ({
                     ) : isThisSuccess ? (
                       <div className="flex items-center gap-1 text-emerald-600 text-[11px] font-bold">
                         <Check className="w-4 h-4" />
-                        <span>Done</span>
+                        <span>Translated</span>
                       </div>
                     ) : (
-                      <span className="text-[10px] text-violet-600 opacity-0 group-hover:opacity-100 font-medium">
-                        Apply →
+                      <span className="text-[10px] text-violet-600 font-medium">
+                        Translate →
                       </span>
                     )}
                   </div>
@@ -169,6 +198,18 @@ export const TranslateButton: React.FC<TranslateButtonProps> = ({
               );
             })}
           </div>
+
+          {/* Undo action inside menu if available */}
+          {previousText && previousText !== value && (
+            <button
+              type="button"
+              onClick={handleUndo}
+              className="w-full py-1.5 px-2.5 rounded-lg bg-stone-100 hover:bg-stone-200 text-stone-700 text-xs font-semibold flex items-center justify-center gap-1.5 transition cursor-pointer"
+            >
+              <Undo2 className="w-3.5 h-3.5 text-stone-600" />
+              <span>Restore original text</span>
+            </button>
+          )}
 
           {/* Error Message */}
           {error && (
@@ -179,7 +220,7 @@ export const TranslateButton: React.FC<TranslateButtonProps> = ({
           )}
 
           <div className="pt-1 border-t border-stone-100 flex items-center justify-between text-[9px] text-stone-400">
-            <span>Powered by Gemini AI</span>
+            <span>Gemini 3.6 Flash AI Engine</span>
             <span>English • தமிழ் • తెలుగు</span>
           </div>
         </div>

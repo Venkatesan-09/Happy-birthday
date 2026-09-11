@@ -36,41 +36,46 @@ export interface TranslateParams {
 const translationCache = new Map<string, string>();
 
 /**
- * Fallback to MyMemory translation API (high quality, supports Tamil & Telugu)
+ * Helper to split long text into sentence chunks under 300 characters
  */
-async function translateWithMyMemory(text: string, targetLang: string): Promise<string | null> {
-  try {
-    const langCodeMap: Record<string, string> = {
-      english: 'en',
-      tamil: 'ta',
-      telugu: 'te',
-    };
-    const targetCode = langCodeMap[targetLang.toLowerCase()] || targetLang;
-    const url = `https://api.mymemory.translated.net/get?q=${encodeURIComponent(text)}&langpair=autodetect|${targetCode}`;
-    
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 6000);
-    
-    const res = await fetch(url, { signal: controller.signal });
-    clearTimeout(timeoutId);
-    
-    if (res.ok) {
-      const data = await res.json();
-      const translated = data?.responseData?.translatedText;
-      if (translated && typeof translated === 'string' && !translated.startsWith('MYMEMORY WARNING')) {
-        return translated.trim();
+function splitIntoChunks(text: string, maxLen = 300): string[] {
+  if (text.length <= maxLen) return [text];
+  const sentences = text.match(/[^.!?\n]+[.!?\n]*/g) || [text];
+  const chunks: string[] = [];
+  let currentChunk = '';
+
+  for (const sentence of sentences) {
+    if ((currentChunk + sentence).length <= maxLen) {
+      currentChunk += sentence;
+    } else {
+      if (currentChunk.trim()) chunks.push(currentChunk.trim());
+      if (sentence.length > maxLen) {
+        // Break long sentence by words
+        const words = sentence.split(' ');
+        let wordChunk = '';
+        for (const w of words) {
+          if ((wordChunk + ' ' + w).length <= maxLen) {
+            wordChunk = wordChunk ? `${wordChunk} ${w}` : w;
+          } else {
+            if (wordChunk.trim()) chunks.push(wordChunk.trim());
+            wordChunk = w;
+          }
+        }
+        if (wordChunk.trim()) currentChunk = wordChunk;
+        else currentChunk = '';
+      } else {
+        currentChunk = sentence;
       }
     }
-  } catch (err: any) {
-    console.warn('[Translate Fallback 1] MyMemory error:', err.message);
   }
-  return null;
+  if (currentChunk.trim()) chunks.push(currentChunk.trim());
+  return chunks;
 }
 
 /**
- * Fallback to Google Translate public endpoint
+ * Fallback to MyMemory translation API (high quality, supports Tamil & Telugu, chunked for long paragraphs)
  */
-async function translateWithGooglePublic(text: string, targetLang: string): Promise<string | null> {
+async function translateWithMyMemory(text: string, targetLang: string, sourceLang?: string): Promise<string | null> {
   try {
     const langCodeMap: Record<string, string> = {
       english: 'en',
@@ -78,23 +83,55 @@ async function translateWithGooglePublic(text: string, targetLang: string): Prom
       telugu: 'te',
     };
     const targetCode = langCodeMap[targetLang.toLowerCase()] || targetLang;
-    const url = `https://translate.googleapis.com/translate_a/single?client=gtx&sl=auto&tl=${targetCode}&dt=t&q=${encodeURIComponent(text)}`;
-    
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 6000);
-    
-    const res = await fetch(url, { signal: controller.signal });
-    clearTimeout(timeoutId);
-    
-    if (res.ok) {
-      const data = await res.json();
-      if (Array.isArray(data) && Array.isArray(data[0])) {
-        const fullTranslation = data[0].map((item: any) => item[0]).join('');
-        if (fullTranslation.trim()) return fullTranslation.trim();
+    const sourceCode = sourceLang && langCodeMap[sourceLang.toLowerCase()] ? langCodeMap[sourceLang.toLowerCase()] : (targetCode === 'en' ? 'ta' : 'en');
+    const chunks = splitIntoChunks(text, 350);
+    const translatedChunks: string[] = [];
+
+    for (const chunk of chunks) {
+      // Try specific langpair first (e.g. en|ta or ta|en), then fallback to autodetect
+      let url = `https://api.mymemory.translated.net/get?q=${encodeURIComponent(chunk)}&langpair=${sourceCode}|${targetCode}`;
+      let controller = new AbortController();
+      let timeoutId = setTimeout(() => controller.abort(), 7000);
+      
+      let res = await fetch(url, { signal: controller.signal }).catch(() => null);
+      clearTimeout(timeoutId);
+      
+      let chunkTranslated: string | null = null;
+
+      if (res && res.ok) {
+        const data = await res.json();
+        const translated = data?.responseData?.translatedText;
+        if (translated && typeof translated === 'string' && !translated.startsWith('MYMEMORY WARNING') && translated.trim() !== chunk.trim()) {
+          chunkTranslated = translated.trim();
+        }
       }
+
+      // If specific langpair didn't translate, try autodetect
+      if (!chunkTranslated) {
+        url = `https://api.mymemory.translated.net/get?q=${encodeURIComponent(chunk)}&langpair=autodetect|${targetCode}`;
+        controller = new AbortController();
+        timeoutId = setTimeout(() => controller.abort(), 7000);
+        res = await fetch(url, { signal: controller.signal }).catch(() => null);
+        clearTimeout(timeoutId);
+
+        if (res && res.ok) {
+          const data = await res.json();
+          const translated = data?.responseData?.translatedText;
+          if (translated && typeof translated === 'string' && !translated.startsWith('MYMEMORY WARNING') && translated.trim() !== chunk.trim()) {
+            chunkTranslated = translated.trim();
+          }
+        }
+      }
+
+      translatedChunks.push(chunkTranslated || chunk);
+    }
+
+    const combined = translatedChunks.join(' ').trim();
+    if (combined && combined !== text.trim()) {
+      return combined;
     }
   } catch (err: any) {
-    console.warn('[Translate Fallback 2] Google Translate public error:', err.message);
+    console.warn('[Translate Fallback] MyMemory error:', err.message);
   }
   return null;
 }
@@ -119,19 +156,18 @@ export async function translateText(params: TranslateParams): Promise<{ result: 
   const targetLangLabel = languageMap[targetLanguage] || targetLanguage;
   const client = getGenAIClient();
 
-  // 1. Try Gemini API first if available with a timeout
+  // 1. Try Gemini API first (gemini-3.6-flash supports long text without length limits)
   if (client) {
-    const prompt = `You are a precise translation assistant for DearYou, a birthday experience app.
+    const prompt = `You are an expert, fluent multilingual translator for DearYou (a birthday experience creator).
 
-Translate the following text to ${targetLangLabel}.
+Translate the following text into ${targetLangLabel}.
 ${sourceLanguage ? `Source language: ${sourceLanguage}` : ''}
 
-Rules:
-- Preserve the emotional tone, warmth, and meaning of the original text exactly.
-- Do NOT add any explanations, notes, or commentary.
-- Return ONLY the translated text, nothing else.
-- Maintain any line breaks or paragraphs in the original text.
-- If the text is already in the target language, return it as-is.
+CRITICAL RULES:
+- Translate the ENTIRE text completely without shortening, cutting off, or omitting any part.
+- Preserve the emotional tone, warmth, line breaks, punctuation, and formatting.
+- Do NOT add any notes, commentary, prefixes (like "Translation:"), or explanations.
+- Return ONLY the pure translated text.
 
 Text to translate:
 ${text}`;
@@ -139,10 +175,10 @@ ${text}`;
     try {
       const response = await Promise.race([
         client.models.generateContent({
-          model: 'gemini-2.5-flash',
+          model: 'gemini-3.6-flash',
           contents: prompt,
         }),
-        new Promise<never>((_, reject) => setTimeout(() => reject(new Error('Gemini API timeout')), 3000))
+        new Promise<never>((_, reject) => setTimeout(() => reject(new Error('Gemini API timeout')), 10000))
       ]);
       const translated = response.text?.trim();
       if (translated) {
@@ -154,21 +190,14 @@ ${text}`;
     }
   }
 
-  // 2. Fast Fallback to Google Translate public endpoint
-  const googleResult = await translateWithGooglePublic(text, targetLanguage);
-  if (googleResult) {
-    translationCache.set(cacheKey, googleResult);
-    return { result: googleResult, language: targetLanguage };
-  }
-
-  // 3. Fallback to MyMemory translation engine
-  const myMemoryResult = await translateWithMyMemory(text, targetLanguage);
+  // 2. High-Quality Chunked MyMemory Fallback (handles long sentences without word limits)
+  const myMemoryResult = await translateWithMyMemory(text, targetLanguage, sourceLanguage);
   if (myMemoryResult) {
     translationCache.set(cacheKey, myMemoryResult);
     return { result: myMemoryResult, language: targetLanguage };
   }
 
-  // 4. Return original if all providers unavailable
+  // 3. Return original if all providers unavailable
   return { result: text, language: targetLanguage };
 }
 
