@@ -139,10 +139,10 @@ ${text}`;
     try {
       const response = await Promise.race([
         client.models.generateContent({
-          model: 'gemini-3.6-flash',
+          model: 'gemini-2.5-flash',
           contents: prompt,
         }),
-        new Promise<never>((_, reject) => setTimeout(() => reject(new Error('Gemini API timeout')), 5000))
+        new Promise<never>((_, reject) => setTimeout(() => reject(new Error('Gemini API timeout')), 3000))
       ]);
       const translated = response.text?.trim();
       if (translated) {
@@ -150,22 +150,22 @@ ${text}`;
         return { result: translated, language: targetLanguage };
       }
     } catch (err: any) {
-      console.warn('[Translate] Gemini API translation notice:', err.message);
+      console.warn('[Translate] Gemini API translation notice (falling back):', err.message);
     }
   }
 
-  // 2. Fallback to MyMemory translation engine
-  const myMemoryResult = await translateWithMyMemory(text, targetLanguage);
-  if (myMemoryResult) {
-    translationCache.set(cacheKey, myMemoryResult);
-    return { result: myMemoryResult, language: targetLanguage };
-  }
-
-  // 3. Fallback to Google Translate endpoint
+  // 2. Fast Fallback to Google Translate public endpoint
   const googleResult = await translateWithGooglePublic(text, targetLanguage);
   if (googleResult) {
     translationCache.set(cacheKey, googleResult);
     return { result: googleResult, language: targetLanguage };
+  }
+
+  // 3. Fallback to MyMemory translation engine
+  const myMemoryResult = await translateWithMyMemory(text, targetLanguage);
+  if (myMemoryResult) {
+    translationCache.set(cacheKey, myMemoryResult);
+    return { result: myMemoryResult, language: targetLanguage };
   }
 
   // 4. Return original if all providers unavailable
