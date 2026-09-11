@@ -296,11 +296,11 @@ export const CelebrationEffects: React.FC<CelebrationEffectsProps> = ({
   }, [mode]);
 
   return (
-    <div className="pointer-events-none fixed inset-0 z-10 overflow-hidden">
-      {/* Background celebration canvas */}
+    <div className="pointer-events-none fixed inset-0 z-0 overflow-hidden select-none">
+      {/* Background celebration canvas strictly behind text & cards */}
       <canvas
         ref={canvasRef}
-        className="pointer-events-none absolute inset-0 h-full w-full"
+        className="pointer-events-none absolute inset-0 h-full w-full opacity-70"
       />
 
       {/* Interactive Celebration Theme Selector Pill */}

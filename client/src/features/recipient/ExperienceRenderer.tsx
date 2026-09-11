@@ -324,8 +324,8 @@ export const ExperienceRenderer: React.FC<ExperienceRendererProps> = ({
         </button>
       </div>
 
-      {/* Render all enabled modules sequentially */}
-      <div className="space-y-16 pt-8 max-w-4xl mx-auto px-4 sm:px-6">
+      {/* Render all enabled modules sequentially (clearly above background celebration effects) */}
+      <div className="space-y-16 pt-8 max-w-4xl mx-auto px-4 sm:px-6 relative z-10">
         {modules.map((mod, idx) => (
           <motion.section
             key={mod._id || idx}
