@@ -57,13 +57,12 @@ function ProtectedRoute({
   );
 }
 
-// Recipient route wrapper — completely public, no authentication required
+// Recipient route wrapper — completely public, zero authentication required
 function RecipientRoute() {
   const { slug, id } = useParams<{ slug?: string; id?: string }>();
-  const navigate = useNavigate();
   const targetSlug = slug || id || '';
-  if (!targetSlug) return <Navigate to="/" replace />;
-  return <PublicRecipientView slug={targetSlug} onExit={() => navigate('/')} />;
+  if (!targetSlug) return <Navigate to="/login" replace />;
+  return <PublicRecipientView slug={targetSlug} />;
 }
 
 // Contributor route wrapper

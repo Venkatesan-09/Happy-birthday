@@ -133,16 +133,26 @@ export const PublicRecipientView: React.FC<PublicRecipientViewProps> = ({
     return (
       <div className="min-h-screen bg-[#faf8f5] flex flex-col items-center justify-center p-6 text-center space-y-4">
         <TeddyMascot pose="sleeping" size="md" />
-        <h3 className="font-playfair font-bold text-2xl text-stone-900">Moment Not Found</h3>
-        <p className="text-sm text-stone-600 max-w-sm">{error || 'Experience not available'}</p>
-        {onExit && (
+        <h3 className="font-playfair font-bold text-2xl text-stone-900">Birthday Moment Not Found</h3>
+        <p className="text-sm text-stone-600 max-w-sm">
+          {error || 'This birthday journey has not been published yet or the link is incorrect.'}
+        </p>
+        <div className="flex items-center gap-3 mt-2">
           <button
-            onClick={onExit}
-            className="px-5 py-2 rounded-xl bg-amber-700 text-white text-xs font-semibold cursor-pointer"
+            onClick={() => loadPublicExperience()}
+            className="px-5 py-2.5 rounded-xl bg-amber-700 hover:bg-amber-800 text-white text-xs font-semibold cursor-pointer transition shadow-xs"
           >
-            Go to Studio Home
+            ↻ Try Refreshing Again
           </button>
-        )}
+          {onExit && (
+            <button
+              onClick={onExit}
+              className="px-4 py-2.5 rounded-xl border border-stone-300 hover:bg-stone-100 text-stone-700 text-xs font-semibold cursor-pointer transition"
+            >
+              Go to Studio Home
+            </button>
+          )}
+        </div>
       </div>
     );
   }
