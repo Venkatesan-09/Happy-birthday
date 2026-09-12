@@ -17,7 +17,26 @@ import { LoginView } from './features/auth/LoginView';
 import { ProfileView } from './features/profile/ProfileView';
 import { getAuthToken, api } from './services/api';
 
-// Loading spinner component
+// ─────────────────────────────────────────────────────────────────────────────
+// Public path detection — runs synchronously before any React state
+// These paths NEVER require authentication and should NEVER trigger any redirect
+// ─────────────────────────────────────────────────────────────────────────────
+const PUBLIC_PATH_PREFIXES = [
+  '/birthday/',
+  '/view/',
+  '/preview/',
+  '/e/',
+  '/contribute/',
+];
+
+function isPublicPath(pathname: string): boolean {
+  return PUBLIC_PATH_PREFIXES.some((prefix) => pathname.startsWith(prefix));
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Shared UI components
+// ─────────────────────────────────────────────────────────────────────────────
+
 function LoadingSplash() {
   return (
     <div className="min-h-screen bg-[#faf8f5] flex items-center justify-center">
@@ -32,7 +51,11 @@ function LoadingSplash() {
   );
 }
 
-// Protected Route wrapper
+// ─────────────────────────────────────────────────────────────────────────────
+// Route wrappers
+// ─────────────────────────────────────────────────────────────────────────────
+
+// Protected Route — requires authentication
 function ProtectedRoute({
   isAuthenticated,
   children,
@@ -57,11 +80,10 @@ function ProtectedRoute({
   );
 }
 
-// Recipient route wrapper — completely public, zero authentication required
+// Public Recipient Route — ZERO auth, ZERO redirect risk
 function RecipientRoute() {
   const { slug, id } = useParams<{ slug?: string; id?: string }>();
   const targetSlug = slug || id || '';
-  // Never redirect to login — just show a friendly not-found state
   if (!targetSlug) {
     return (
       <div className="min-h-screen bg-[#faf8f5] flex flex-col items-center justify-center p-6 text-center">
@@ -72,15 +94,21 @@ function RecipientRoute() {
   return <PublicRecipientView slug={targetSlug} />;
 }
 
-// Contributor route wrapper
+// Public Contributor Route — no auth needed
 function ContributorRoute() {
   const { token } = useParams<{ token: string }>();
   const navigate = useNavigate();
-  if (!token) return <Navigate to="/login" replace />;
+  if (!token) {
+    return (
+      <div className="min-h-screen bg-[#faf8f5] flex flex-col items-center justify-center p-6 text-center">
+        <p className="text-stone-500 text-sm">Invalid contributor link.</p>
+      </div>
+    );
+  }
   return <ContributorSubmissionView token={token} onExit={() => navigate('/')} />;
 }
 
-// Experience Studio wrapper
+// Creator Studio route — requires auth (wrapped by ProtectedRoute in AppRoutes)
 function ExperienceStudioRoute() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
@@ -96,7 +124,41 @@ function ExperienceStudioRoute() {
   );
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// Root App — two-tier routing: public-only OR full authenticated app
+// ─────────────────────────────────────────────────────────────────────────────
+
 export default function App() {
+  const currentPath = typeof window !== 'undefined' ? window.location.pathname : '/';
+
+  // IMPORTANT: If this is a public recipient/contributor URL, mount a completely
+  // isolated router with ZERO auth logic. The auth state (isAuthenticated) is
+  // never created, never checked, and can never redirect to /login.
+  if (isPublicPath(currentPath)) {
+    return (
+      <BrowserRouter>
+        <Routes>
+          <Route path="/birthday/:slug" element={<RecipientRoute />} />
+          <Route path="/view/:slug" element={<RecipientRoute />} />
+          <Route path="/preview/:slug" element={<RecipientRoute />} />
+          <Route path="/e/:slug" element={<RecipientRoute />} />
+          <Route path="/contribute/:token" element={<ContributorRoute />} />
+          {/* Safety fallback — still shows public view, never redirects */}
+          <Route path="*" element={<RecipientRoute />} />
+        </Routes>
+      </BrowserRouter>
+    );
+  }
+
+  // All other paths use the full authenticated app
+  return <AuthenticatedApp />;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Authenticated App — handles auth state + protected routes
+// ─────────────────────────────────────────────────────────────────────────────
+
+function AuthenticatedApp() {
   const [isAuthenticated, setIsAuthenticated] = useState<boolean | null>(null);
 
   const checkAuth = async () => {
@@ -146,13 +208,13 @@ function AppRoutes({
 
   return (
     <Routes>
-      {/* Public Recipient View & Shared Preview Routes (No login required) */}
+      {/* Public Recipient View & Shared Preview Routes — also available here for
+          in-app navigation (e.g. creator clicking "View Live" from the editor) */}
       <Route path="/birthday/:slug" element={<RecipientRoute />} />
       <Route path="/view/:slug" element={<RecipientRoute />} />
       <Route path="/preview/:slug" element={<RecipientRoute />} />
       <Route path="/e/:slug" element={<RecipientRoute />} />
       <Route path="/share/:slug" element={<RecipientRoute />} />
-      <Route path="/experience/:slug" element={<RecipientRoute />} />
 
       {/* Public Contributor Submission View */}
       <Route path="/contribute/:token" element={<ContributorRoute />} />
@@ -241,7 +303,7 @@ function AppRoutes({
         }
       />
 
-      {/* Fallback 404 — do NOT redirect to / as that sends unauthenticated users to /login */}
+      {/* Fallback 404 — intentionally does NOT redirect to / */}
       <Route
         path="*"
         element={
