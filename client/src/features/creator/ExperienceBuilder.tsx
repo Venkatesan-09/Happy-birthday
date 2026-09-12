@@ -76,6 +76,7 @@ export const ExperienceBuilder: React.FC<ExperienceBuilderProps> = ({
   const [isLibraryOpen, setIsLibraryOpen] = useState(false);
   const [isAIOpen, setIsAIOpen] = useState(false);
   const [isShareOpen, setIsShareOpen] = useState(false);
+  const [shareModalTab, setShareModalTab] = useState<'recipient' | 'dashboard'>('recipient');
   const [isVersionsOpen, setIsVersionsOpen] = useState(false);
   const [isPublishing, setIsPublishing] = useState(false);
   const [saveStatus, setSaveStatus] = useState<string>('Saved');
@@ -211,6 +212,7 @@ export const ExperienceBuilder: React.FC<ExperienceBuilderProps> = ({
       } else {
         await loadExperience();
       }
+      setShareModalTab('recipient');
       setIsShareOpen(true);
     } catch (err: any) {
       console.error(err);
@@ -303,11 +305,15 @@ export const ExperienceBuilder: React.FC<ExperienceBuilderProps> = ({
             <History className="w-4 h-4" />
           </button>
           <button
-            onClick={() => setIsShareOpen(true)}
+            onClick={() => {
+              setShareModalTab('dashboard');
+              setIsShareOpen(true);
+            }}
             className="px-2.5 sm:px-3.5 py-2 rounded-xl border border-stone-300 text-stone-700 hover:bg-stone-50 text-xs font-semibold flex items-center gap-1.5 cursor-pointer"
+            title="Share Dashboard / Studio Link"
           >
             <Share2 className="w-3.5 h-3.5" />
-            <span className="hidden sm:inline">Share & QR</span>
+            <span className="hidden sm:inline">Share Studio</span>
           </button>
           <button
             onClick={handlePublish}
@@ -317,14 +323,15 @@ export const ExperienceBuilder: React.FC<ExperienceBuilderProps> = ({
                 ? 'bg-emerald-700 hover:bg-emerald-800'
                 : 'bg-amber-700 hover:bg-amber-800'
             }`}
+            title="Publish and Open Live Recipient Preview"
           >
             <Sparkles className="w-3.5 h-3.5" />
             <span>
               {isPublishing
                 ? 'Publishing...'
                 : String(experience.status).toUpperCase() === 'PUBLISHED'
-                ? 'Published ✓ (Update)'
-                : 'Publish'}
+                ? 'Publish & View Live Preview'
+                : 'Publish Experience'}
             </span>
           </button>
         </div>
@@ -728,6 +735,7 @@ export const ExperienceBuilder: React.FC<ExperienceBuilderProps> = ({
         isOpen={isShareOpen}
         onClose={() => setIsShareOpen(false)}
         experience={experience}
+        initialTab={shareModalTab}
         onUpdatePrivacy={async (priv) => {
           await api.experiences.update(experience._id, { privacy: priv });
           loadExperience();

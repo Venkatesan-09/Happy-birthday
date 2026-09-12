@@ -11,6 +11,7 @@ interface ShareModalProps {
   onClose: () => void;
   experience: Experience;
   onUpdatePrivacy?: (privacy: any) => void;
+  initialTab?: 'recipient' | 'dashboard';
 }
 
 export const ShareModal: React.FC<ShareModalProps> = ({
@@ -18,8 +19,11 @@ export const ShareModal: React.FC<ShareModalProps> = ({
   onClose,
   experience,
   onUpdatePrivacy,
+  initialTab = 'recipient',
 }) => {
+  const [activeShareTab, setActiveShareTab] = useState<'recipient' | 'dashboard'>(initialTab);
   const [copied, setCopied] = useState(false);
+  const [copiedDashboard, setCopiedDashboard] = useState(false);
   const [qrDataUrl, setQrDataUrl] = useState<string>('');
   const [privacyType, setPrivacyType] = useState(experience.privacy?.type || 'PUBLIC');
   const isProduction = typeof window !== 'undefined' &&
@@ -85,19 +89,25 @@ export const ShareModal: React.FC<ShareModalProps> = ({
 
   const expSlug = (experience.slug || (experience as any)._id || (experience as any).id || '').trim();
   const fullUrl = `${baseOrigin}/birthday/${expSlug}`;
+  const dashboardStudioUrl = `${baseOrigin}/experience/${experience._id}/edit`;
+  const activeCopyUrl = activeShareTab === 'recipient' ? fullUrl : dashboardStudioUrl;
 
   useEffect(() => {
-    if (isOpen && fullUrl) {
-      QRCode.toDataURL(fullUrl, { width: 240, margin: 2, color: { dark: '#451a03', light: '#ffffff' } })
+    setActiveShareTab(initialTab);
+  }, [initialTab, isOpen]);
+
+  useEffect(() => {
+    if (isOpen && activeCopyUrl) {
+      QRCode.toDataURL(activeCopyUrl, { width: 240, margin: 2, color: { dark: '#451a03', light: '#ffffff' } })
         .then((url) => setQrDataUrl(url))
         .catch((err) => console.error(err));
     }
-  }, [isOpen, fullUrl]);
+  }, [isOpen, activeCopyUrl]);
 
   if (!isOpen) return null;
 
   const handleCopyLink = () => {
-    navigator.clipboard.writeText(fullUrl);
+    navigator.clipboard.writeText(activeCopyUrl);
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
   };
@@ -137,14 +147,48 @@ export const ShareModal: React.FC<ShareModalProps> = ({
           <X className="w-5 h-5" />
         </button>
 
-        <TeddyMascot pose="holding_gift" size="md" message="Ready to share with them!" />
+        <TeddyMascot
+          pose={activeShareTab === 'recipient' ? 'holding_gift' : 'thinking'}
+          size="md"
+          message={activeShareTab === 'recipient' ? 'Ready for the birthday star!' : 'Manage your journey in Studio!'}
+        />
 
         <h3 className="font-playfair font-bold text-2xl text-stone-900 mt-2">
-          Share {experience.recipient?.name}'s Journey
+          {activeShareTab === 'recipient' ? `Share ${experience.recipient?.name}'s Journey` : 'Share Studio / Dashboard Link'}
         </h3>
         <p className="text-xs text-stone-500 mt-1 max-w-sm mx-auto">
-          Scan the QR code with any mobile camera or copy the link to send via WhatsApp/iMessage.
+          {activeShareTab === 'recipient'
+            ? 'This public link directly opens the live birthday experience (no login required).'
+            : 'This link opens the Creator Studio editor to edit cards, modules, and soundtrack.'}
         </p>
+
+        {/* Share Purpose Tabs */}
+        <div className="grid grid-cols-2 gap-2 mt-4 mb-3 p-1 bg-stone-100 rounded-2xl">
+          <button
+            type="button"
+            onClick={() => setActiveShareTab('recipient')}
+            className={`py-2 px-3 rounded-xl text-xs font-bold transition flex items-center justify-center gap-1.5 cursor-pointer ${
+              activeShareTab === 'recipient'
+                ? 'bg-amber-700 text-white shadow-xs'
+                : 'text-stone-600 hover:text-stone-900'
+            }`}
+          >
+            <Sparkles className="w-3.5 h-3.5" />
+            <span>🎁 Recipient Preview Link</span>
+          </button>
+          <button
+            type="button"
+            onClick={() => setActiveShareTab('dashboard')}
+            className={`py-2 px-3 rounded-xl text-xs font-bold transition flex items-center justify-center gap-1.5 cursor-pointer ${
+              activeShareTab === 'dashboard'
+                ? 'bg-amber-700 text-white shadow-xs'
+                : 'text-stone-600 hover:text-stone-900'
+            }`}
+          >
+            <Laptop className="w-3.5 h-3.5" />
+            <span>⚙️ Studio / Dashboard Link</span>
+          </button>
+        </div>
 
         {/* Link Target Mode Selector */}
         <div className="mt-4 mb-4 p-3 rounded-2xl bg-amber-50/80 border border-amber-200 text-left">
@@ -269,7 +313,7 @@ export const ShareModal: React.FC<ShareModalProps> = ({
           <input
             type="text"
             readOnly
-            value={fullUrl}
+            value={activeCopyUrl}
             className="flex-1 bg-transparent px-3 text-xs text-stone-700 font-mono focus:outline-none"
           />
           <button
@@ -282,26 +326,34 @@ export const ShareModal: React.FC<ShareModalProps> = ({
         </div>
 
         {/* Helpful tip for mobile */}
-        {linkMode === 'lan' && hasLanIp && (
-          <p className="text-[10px] text-amber-700 mt-2 text-center font-medium">
-            ✅ Send this link via WhatsApp — open it on any phone on your home Wi-Fi
-          </p>
-        )}
-        {linkMode === 'public' && (
-          <p className="text-[10px] text-emerald-700 mt-2 text-center font-medium">
-            ✅ This link works anywhere — send it via WhatsApp, SMS, or email
+        {activeShareTab === 'recipient' ? (
+          <>
+            {linkMode === 'lan' && hasLanIp && (
+              <p className="text-[10px] text-amber-700 mt-2 text-center font-medium">
+                ✅ Send this recipient link via WhatsApp — directly opens the birthday preview (no sign-in needed)
+              </p>
+            )}
+            {linkMode === 'public' && (
+              <p className="text-[10px] text-emerald-700 mt-2 text-center font-medium">
+                ✅ This recipient link works anywhere worldwide — zero login required
+              </p>
+            )}
+          </>
+        ) : (
+          <p className="text-[10px] text-stone-600 mt-2 text-center font-medium">
+            🔒 This Studio link allows you to manage modules, edit theme, and update soundtrack.
           </p>
         )}
 
         {/* Open Direct Button */}
         <div className="mt-4 flex flex-col sm:flex-row items-center justify-center gap-2">
           <a
-            href={fullUrl}
+            href={activeCopyUrl}
             target="_blank"
             rel="noopener noreferrer"
             className="w-full sm:w-auto px-5 py-2.5 rounded-xl bg-gradient-to-r from-amber-600 to-rose-600 hover:from-amber-700 hover:to-rose-700 text-white font-bold text-xs flex items-center justify-center gap-2 shadow-md hover:shadow-lg transition transform hover:-translate-y-0.5"
           >
-            <span>✨ Open Live Recipient Preview</span>
+            <span>{activeShareTab === 'recipient' ? '✨ Open Live Recipient Preview' : '🛠️ Open Studio Editor'}</span>
             <ExternalLink className="w-4 h-4" />
           </a>
         </div>
