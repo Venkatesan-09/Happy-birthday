@@ -98,8 +98,21 @@ async function startServer() {
     app.use(vite.middlewares);
   } else {
     const distPath = path.join(process.cwd(), 'dist');
-    app.use(express.static(distPath));
+
+    // Serve hashed assets (JS/CSS) with long-term cache — safe because filenames change on rebuild
+    app.use('/assets', express.static(path.join(distPath, 'assets'), {
+      maxAge: '1y',
+      immutable: true,
+    }));
+
+    // Serve everything else (favicon, manifest, etc.) with short cache
+    app.use(express.static(distPath, { maxAge: '1h' }));
+
+    // SPA fallback — NEVER cache index.html so browsers always get the latest bundle reference
     app.get('*', (_req: Request, res: Response) => {
+      res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
+      res.setHeader('Pragma', 'no-cache');
+      res.setHeader('Expires', '0');
       res.sendFile(path.join(distPath, 'index.html'));
     });
   }
