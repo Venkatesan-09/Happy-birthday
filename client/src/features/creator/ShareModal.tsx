@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { motion } from 'motion/react';
 import QRCode from 'qrcode';
-import { X, Copy, Check, ExternalLink, Globe, Lock, Smartphone, Laptop, Wifi, AlertCircle } from 'lucide-react';
+import { X, Copy, Check, ExternalLink, Globe, Lock, Smartphone, Laptop, Wifi, AlertCircle, Sparkles } from 'lucide-react';
 import { Experience } from '../../types';
 import { TeddyMascot } from '../../components/TeddyMascot';
 import { api } from '../../services/api';
