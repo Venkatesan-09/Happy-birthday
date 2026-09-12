@@ -57,12 +57,13 @@ function ProtectedRoute({
   );
 }
 
-// Recipient route wrapper
+// Recipient route wrapper — completely public, no authentication required
 function RecipientRoute() {
-  const { slug } = useParams<{ slug: string }>();
+  const { slug, id } = useParams<{ slug?: string; id?: string }>();
   const navigate = useNavigate();
-  if (!slug) return <Navigate to="/login" replace />;
-  return <PublicRecipientView slug={slug} onExit={() => navigate('/')} />;
+  const targetSlug = slug || id || '';
+  if (!targetSlug) return <Navigate to="/" replace />;
+  return <PublicRecipientView slug={targetSlug} onExit={() => navigate('/')} />;
 }
 
 // Contributor route wrapper
@@ -139,8 +140,13 @@ function AppRoutes({
 
   return (
     <Routes>
-      {/* Public Recipient View */}
+      {/* Public Recipient View & Shared Preview Routes (No login required) */}
       <Route path="/birthday/:slug" element={<RecipientRoute />} />
+      <Route path="/view/:slug" element={<RecipientRoute />} />
+      <Route path="/preview/:slug" element={<RecipientRoute />} />
+      <Route path="/e/:slug" element={<RecipientRoute />} />
+      <Route path="/share/:slug" element={<RecipientRoute />} />
+      <Route path="/experience/:slug" element={<RecipientRoute />} />
 
       {/* Public Contributor Submission View */}
       <Route path="/contribute/:token" element={<ContributorRoute />} />

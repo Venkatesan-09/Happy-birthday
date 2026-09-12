@@ -80,7 +80,8 @@ export const ShareModal: React.FC<ShareModalProps> = ({
     baseOrigin = window.location.origin;
   }
 
-  const fullUrl = `${baseOrigin}/birthday/${experience.slug}`;
+  const expSlug = (experience.slug || (experience as any)._id || (experience as any).id || '').trim();
+  const fullUrl = `${baseOrigin}/birthday/${expSlug}`;
 
   useEffect(() => {
     if (isOpen && fullUrl) {
@@ -290,15 +291,15 @@ export const ShareModal: React.FC<ShareModalProps> = ({
         )}
 
         {/* Open Direct Button */}
-        <div className="mt-3 flex justify-center">
+        <div className="mt-4 flex flex-col sm:flex-row items-center justify-center gap-2">
           <a
             href={fullUrl}
             target="_blank"
             rel="noopener noreferrer"
-            className="inline-flex items-center gap-1.5 text-xs font-semibold text-amber-800 hover:text-amber-950 underline"
+            className="w-full sm:w-auto px-5 py-2.5 rounded-xl bg-gradient-to-r from-amber-600 to-rose-600 hover:from-amber-700 hover:to-rose-700 text-white font-bold text-xs flex items-center justify-center gap-2 shadow-md hover:shadow-lg transition transform hover:-translate-y-0.5"
           >
-            <span>Open Recipient Experience in New Tab</span>
-            <ExternalLink className="w-3.5 h-3.5" />
+            <span>✨ Open Live Recipient Preview</span>
+            <ExternalLink className="w-4 h-4" />
           </a>
         </div>
 

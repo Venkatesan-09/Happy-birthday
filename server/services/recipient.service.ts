@@ -1,3 +1,4 @@
+import mongoose from 'mongoose';
 import bcrypt from 'bcryptjs';
 import { Experience } from '../models/Experience';
 import { Module } from '../models/Module';
@@ -6,12 +7,26 @@ import { RecipientSession } from '../models/RecipientSession';
 import { hashToken } from '../utils';
 
 export class RecipientService {
+  private static async findExperienceBySlugOrId(slug: string): Promise<any> {
+    const cleanSlug = (slug || '').trim();
+    const isObjectId = mongoose.isValidObjectId(cleanSlug);
+
+    return Experience.findOne({
+      $or: [
+        { slug: cleanSlug.toLowerCase() },
+        { slug: cleanSlug },
+        ...(isObjectId ? [{ _id: new mongoose.Types.ObjectId(cleanSlug) }] : []),
+      ],
+    });
+  }
+
   /**
-   * Fetches public experience by slug, stripping sensitive data.
+   * Fetches public experience by slug or ID, stripping sensitive data.
    * If password protected, verifies password token.
    */
   static async getExperienceBySlug(slug: string, accessHeader?: string): Promise<any> {
-    const experience = await Experience.findOne({ slug: slug.toLowerCase() });
+    const experience = await this.findExperienceBySlugOrId(slug);
+
     if (!experience) {
       const error: any = new Error('Experience not found');
       error.statusCode = 404;
@@ -130,7 +145,7 @@ export class RecipientService {
    * NO BACKDOORS (removed 'teddy', 'birthday', etc.).
    */
   static async verifyPassword(slug: string, passwordAttempt: string): Promise<string> {
-    const experience = await Experience.findOne({ slug: slug.toLowerCase() });
+    const experience = await this.findExperienceBySlugOrId(slug);
     if (!experience) {
       const error: any = new Error('Experience not found');
       error.statusCode = 404;
@@ -154,7 +169,7 @@ export class RecipientService {
   }
 
   static async getProgress(slug: string, sessionId: string): Promise<any> {
-    const experience = await Experience.findOne({ slug: slug.toLowerCase() });
+    const experience = await this.findExperienceBySlugOrId(slug);
     if (!experience) {
       const error: any = new Error('Experience not found');
       error.statusCode = 404;
@@ -181,7 +196,7 @@ export class RecipientService {
   }
 
   static async updateProgress(slug: string, data: any): Promise<any> {
-    const experience = await Experience.findOne({ slug: slug.toLowerCase() });
+    const experience = await this.findExperienceBySlugOrId(slug);
     if (!experience) {
       const error: any = new Error('Experience not found');
       error.statusCode = 404;
