@@ -88,7 +88,8 @@ export const ShareModal: React.FC<ShareModalProps> = ({
   }
 
   const expSlug = (experience.slug || (experience as any)._id || (experience as any).id || '').trim();
-  const fullUrl = `${baseOrigin}/birthday/${expSlug}`;
+  // /r/:slug is the standalone recipient-only page — zero auth, zero router, works on any device
+  const fullUrl = `${baseOrigin}/r/${expSlug}`;
   const dashboardStudioUrl = `${baseOrigin}/experience/${experience._id}/edit`;
   const activeCopyUrl = activeShareTab === 'recipient' ? fullUrl : dashboardStudioUrl;
 

@@ -108,6 +108,19 @@ async function startServer() {
     // Serve everything else (favicon, manifest, etc.) with short cache
     app.use(express.static(distPath, { maxAge: '1h' }));
 
+    // ──────────────────────────────────────────────────────────────────
+    // STANDALONE RECIPIENT PREVIEW — /r/:slug
+    // Serves a completely separate page (recipient.html) with its own
+    // isolated JS bundle. ZERO auth, ZERO router, ZERO redirect risk.
+    // This is the definitive public shareable link for birthday previews.
+    // ──────────────────────────────────────────────────────────────────
+    app.get('/r/:slug', (_req: Request, res: Response) => {
+      res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
+      res.setHeader('Pragma', 'no-cache');
+      res.setHeader('Expires', '0');
+      res.sendFile(path.join(distPath, 'recipient.html'));
+    });
+
     // SPA fallback — NEVER cache index.html so browsers always get the latest bundle reference
     app.get('*', (_req: Request, res: Response) => {
       res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
