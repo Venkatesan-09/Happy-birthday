@@ -61,7 +61,14 @@ function ProtectedRoute({
 function RecipientRoute() {
   const { slug, id } = useParams<{ slug?: string; id?: string }>();
   const targetSlug = slug || id || '';
-  if (!targetSlug) return <Navigate to="/login" replace />;
+  // Never redirect to login — just show a friendly not-found state
+  if (!targetSlug) {
+    return (
+      <div className="min-h-screen bg-[#faf8f5] flex flex-col items-center justify-center p-6 text-center">
+        <p className="text-stone-500 text-sm">Birthday experience not found.</p>
+      </div>
+    );
+  }
   return <PublicRecipientView slug={targetSlug} />;
 }
 
@@ -234,8 +241,19 @@ function AppRoutes({
         }
       />
 
-      {/* Fallback 404 redirect */}
-      <Route path="*" element={<Navigate to="/" replace />} />
+      {/* Fallback 404 — do NOT redirect to / as that sends unauthenticated users to /login */}
+      <Route
+        path="*"
+        element={
+          <div className="min-h-screen bg-[#faf8f5] flex flex-col items-center justify-center p-6 text-center gap-4">
+            <h2 className="font-playfair font-bold text-2xl text-stone-800">Page Not Found</h2>
+            <p className="text-stone-500 text-sm">The page you are looking for doesn't exist.</p>
+            <a href="/" className="px-5 py-2.5 rounded-xl bg-amber-700 text-white text-xs font-semibold hover:bg-amber-800 transition">
+              Go Home
+            </a>
+          </div>
+        }
+      />
     </Routes>
   );
 }
