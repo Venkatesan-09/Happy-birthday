@@ -149,7 +149,7 @@ export const ShareModal: React.FC<ShareModalProps> = ({
         </button>
 
         <TeddyMascot
-          pose={activeShareTab === 'recipient' ? 'holding_gift' : 'thinking'}
+          pose={activeShareTab === 'recipient' ? 'holding_gift' : 'exploring'}
           size="md"
           message={activeShareTab === 'recipient' ? 'Ready for the birthday star!' : 'Manage your journey in Studio!'}
         />

@@ -244,7 +244,7 @@ export const ExperienceRenderer: React.FC<ExperienceRendererProps> = ({
     if (!isYouTubeTrack || !youTubeVideoId) return;
 
     let isMounted = true;
-    const containerId = `dearyou-yt-bg-${experience.id || 'main'}`;
+    const containerId = `dearyou-yt-bg-${experience._id || 'main'}`;
 
     loadYouTubeIFrameAPI().then(() => {
       if (!isMounted) return;
@@ -337,7 +337,7 @@ export const ExperienceRenderer: React.FC<ExperienceRendererProps> = ({
         ytPlayerRef.current = null;
       }
     };
-  }, [isYouTubeTrack, youTubeVideoId, experience.id]);
+  }, [isYouTubeTrack, youTubeVideoId, experience._id]);
 
   // Ensure audio instance stays updated with current backgroundAudioUrl (Non-YouTube)
   React.useEffect(() => {
@@ -424,7 +424,7 @@ export const ExperienceRenderer: React.FC<ExperienceRendererProps> = ({
             zIndex: -9999,
           }}
         >
-          <div id={`dearyou-yt-bg-${experience.id || 'main'}`} />
+          <div id={`dearyou-yt-bg-${experience._id || 'main'}`} />
         </div>
       )}
 
