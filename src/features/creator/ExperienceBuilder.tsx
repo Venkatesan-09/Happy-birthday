@@ -203,10 +203,14 @@ export const ExperienceBuilder: React.FC<ExperienceBuilderProps> = ({
         setIsPublishing(false);
         return;
       }
-      await api.experiences.publish(experience._id);
+      const pubRes = await api.experiences.publish(experience._id);
       SoundEffects.playCelebrationFanfare();
       confetti({ particleCount: 120, spread: 90, origin: { y: 0.5 } });
-      await loadExperience();
+      if (pubRes?.experience) {
+        setExperience(pubRes.experience);
+      } else {
+        await loadExperience();
+      }
       setIsShareOpen(true);
     } catch (err: any) {
       console.error(err);

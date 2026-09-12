@@ -28,7 +28,8 @@ export const ShareModal: React.FC<ShareModalProps> = ({
 
   const [password, setPassword] = useState('');
   const [savedPrivacy, setSavedPrivacy] = useState(false);
-  const [linkMode, setLinkMode] = useState<'lan' | 'public' | 'local'>(isProduction ? 'public' : 'lan');
+  // Default link mode: if production or if public tunnel available, use public, else local/lan
+  const [linkMode, setLinkMode] = useState<'lan' | 'public' | 'local'>('local');
   const [publicTunnelUrl, setPublicTunnelUrl] = useState<string>('');
   const [detectedLanIp, setDetectedLanIp] = useState<string>('');
   const [allLanIps, setAllLanIps] = useState<string[]>([]);
@@ -46,8 +47,11 @@ export const ShareModal: React.FC<ShareModalProps> = ({
             setLinkMode('public');
           } else if (isProduction) {
             setLinkMode('public');
+          } else if (res?.ip && res.ip !== '127.0.0.1') {
+            setDetectedLanIp(res.ip);
+            setLinkMode('lan');
           } else {
-            setPublicTunnelUrl('');
+            setLinkMode('local');
           }
           if (res?.ip && res.ip !== '127.0.0.1') {
             setDetectedLanIp(res.ip);
@@ -62,7 +66,6 @@ export const ShareModal: React.FC<ShareModalProps> = ({
   }, [isOpen, isProduction]);
 
   // Compute URL based on target mode (LAN IP, Public tunnel, or localhost)
-  // Use the ACTUAL port the app is served on (not hardcoded 5173)
   const currentPort = window.location.port || (window.location.protocol === 'https:' ? '443' : '80');
   const protocol = window.location.protocol.replace(':', '');
 
