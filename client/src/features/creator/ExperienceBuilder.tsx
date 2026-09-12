@@ -41,6 +41,7 @@ import {
   Radio,
   Volume2,
   FileAudio,
+  Youtube,
 } from 'lucide-react';
 import { Experience, ExperienceModule, ModuleType } from '../../types';
 import { api } from '../../services/api';
@@ -56,6 +57,7 @@ import { ContributorsManager } from './ContributorsManager';
 import { TranslateButton } from '../../components/TranslateButton';
 import { MediaLibraryModal } from './MediaLibraryModal';
 import { getMediaUrl } from '../../utils/mediaUrl';
+import { extractYouTubeId, fetchYouTubeDetails, getYouTubeThumbnail } from '../../utils/youtube';
 
 interface ExperienceBuilderProps {
   experienceId: string;
@@ -801,7 +803,12 @@ const VoiceNoteEditor: React.FC<{
   moduleId?: string;
   MediaPickButton: any;
 }> = ({ content, updateField, experienceId, moduleId, MediaPickButton }) => {
-  const [activeSubTab, setActiveSubTab] = useState<'upload' | 'presets' | 'dedication'>('upload');
+  const currentYtId = extractYouTubeId(content.youtubeUrl || content.audioUrl || content.youtubeId);
+  const isCurrentlyYouTube = !!(currentYtId || content.sourceType === 'youtube');
+
+  const [activeSubTab, setActiveSubTab] = useState<'upload' | 'youtube' | 'presets' | 'dedication'>(
+    isCurrentlyYouTube ? 'youtube' : 'upload'
+  );
   const [uploading, setUploading] = useState(false);
   const [uploadProgress, setUploadProgress] = useState(0);
   const [uploadError, setUploadError] = useState('');
@@ -810,6 +817,28 @@ const VoiceNoteEditor: React.FC<{
   const [previewDuration, setPreviewDuration] = useState<string>(content.durationSeconds || '');
   const fileInputRef = useRef<HTMLInputElement>(null);
   const audioPreviewRef = useRef<HTMLAudioElement | null>(null);
+
+  // YouTube tab state
+  const [youtubeInput, setYoutubeInput] = useState(
+    content.youtubeUrl || (isCurrentlyYouTube && content.audioUrl ? content.audioUrl : '')
+  );
+  const [ytLoading, setYtLoading] = useState(false);
+  const [ytError, setYtError] = useState('');
+  const [ytPreviewMeta, setYtPreviewMeta] = useState<{
+    title: string;
+    authorName: string;
+    thumbnailUrl: string;
+    videoId: string;
+  } | null>(
+    currentYtId
+      ? {
+          title: content.title || 'YouTube Soundtrack',
+          authorName: content.senderName || 'YouTube Music',
+          thumbnailUrl: getYouTubeThumbnail(currentYtId, 'hq'),
+          videoId: currentYtId,
+        }
+      : null
+  );
 
   const hasAudio = !!(content.audioUrl && String(content.audioUrl).trim());
 
@@ -848,6 +877,9 @@ const VoiceNoteEditor: React.FC<{
       const audioUrl = result?.cloudinary?.secureUrl || result?.secureUrl || result?.url || '';
       if (audioUrl) {
         updateField('audioUrl', audioUrl);
+        updateField('sourceType', 'upload');
+        updateField('youtubeUrl', '');
+        updateField('youtubeId', '');
         // Default to playing in background when uploaded
         if (content.playAsBackground !== false) {
           updateField('playAsBackground', true);
@@ -866,8 +898,70 @@ const VoiceNoteEditor: React.FC<{
     }
   };
 
+  const handleApplyYouTubeUrl = async (rawUrl: string) => {
+    const cleanUrl = rawUrl.trim();
+    if (!cleanUrl) {
+      setYtError('Please enter a YouTube video URL or Video ID');
+      return;
+    }
+
+    const videoId = extractYouTubeId(cleanUrl);
+    if (!videoId) {
+      setYtError('Could not find a valid YouTube Video ID. Please check the URL format (e.g. https://www.youtube.com/watch?v=... or https://youtu.be/...)');
+      return;
+    }
+
+    setYtError('');
+    setYtLoading(true);
+
+    try {
+      const meta = await fetchYouTubeDetails(cleanUrl);
+      const standardUrl = `https://www.youtube.com/watch?v=${videoId}`;
+
+      setYtPreviewMeta(meta || {
+        title: 'YouTube Soundtrack',
+        authorName: 'YouTube Music',
+        thumbnailUrl: getYouTubeThumbnail(videoId, 'hq'),
+        videoId,
+      });
+
+      updateField('audioUrl', standardUrl);
+      updateField('youtubeUrl', standardUrl);
+      updateField('youtubeId', videoId);
+      updateField('sourceType', 'youtube');
+      updateField('coverUrl', getYouTubeThumbnail(videoId, 'hq'));
+      updateField('playAsBackground', true);
+
+      if (!content.title || content.title === 'Personal Soundtrack' || content.title.startsWith('Birthday Soundtrack')) {
+        updateField('title', meta?.title || 'YouTube Birthday Soundtrack');
+      }
+      if (meta?.authorName && (!content.senderName || content.senderName === '')) {
+        updateField('senderName', meta.authorName);
+      }
+    } catch (e: any) {
+      setYtError(e?.message || 'Failed to fetch YouTube info');
+    } finally {
+      setYtLoading(false);
+    }
+  };
+
+  const handleClearYouTube = () => {
+    setYoutubeInput('');
+    setYtPreviewMeta(null);
+    setYtError('');
+    updateField('youtubeUrl', '');
+    updateField('youtubeId', '');
+    updateField('audioUrl', '');
+    updateField('sourceType', '');
+  };
+
   const toggleAudioPreview = () => {
     if (!content.audioUrl) return;
+
+    if (isCurrentlyYouTube) {
+      setIsPlaying((p) => !p);
+      return;
+    }
 
     if (!audioPreviewRef.current) {
       const audio = new Audio(getMediaUrl(content.audioUrl));
@@ -898,21 +992,34 @@ const VoiceNoteEditor: React.FC<{
     };
   }, [content.audioUrl]);
 
+  // Suggested popular YouTube soundtrack ideas
+  const YOUTUBE_SUGGESTIONS = [
+    { title: 'Ed Sheeran - Perfect', url: 'https://www.youtube.com/watch?v=2Vv-BfVoq4g', tag: 'Romantic Ballad' },
+    { title: 'Christina Perri - A Thousand Years', url: 'https://www.youtube.com/watch?v=rtOvBOTyX00', tag: 'Love Theme' },
+    { title: 'Happy Birthday Acoustic Instrumental', url: 'https://www.youtube.com/watch?v=NL6CDFn2i3I', tag: 'Acoustic Birthday' },
+    { title: 'Lo-Fi Birthday Warm Ambient', url: 'https://www.youtube.com/watch?v=jfKfPfyJRdk', tag: 'Chill Lo-Fi' },
+    { title: 'Stephen Sanchez - Until I Found You', url: 'https://www.youtube.com/watch?v=GxldQ9GyXwo', tag: 'Retro Romance' },
+  ];
+
   return (
     <div className="space-y-6">
       {/* Studio Header Card */}
       <div className="p-6 rounded-3xl bg-gradient-to-br from-amber-500/10 via-[#fffdfa] to-rose-500/10 border-2 border-amber-200/80 shadow-md relative overflow-hidden">
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-4 border-b border-amber-200/60">
           <div className="flex items-center gap-3">
-            <div className="w-12 h-12 rounded-2xl bg-gradient-to-tr from-amber-600 to-rose-600 text-white flex items-center justify-center shadow-md">
-              <Disc3 className={`w-6 h-6 ${isPlaying ? 'animate-spin' : ''}`} />
+            <div className={`w-12 h-12 rounded-2xl ${isCurrentlyYouTube ? 'bg-gradient-to-tr from-red-600 to-rose-600' : 'bg-gradient-to-tr from-amber-600 to-rose-600'} text-white flex items-center justify-center shadow-md`}>
+              {isCurrentlyYouTube ? (
+                <Youtube className="w-6 h-6" />
+              ) : (
+                <Disc3 className={`w-6 h-6 ${isPlaying ? 'animate-spin' : ''}`} />
+              )}
             </div>
             <div>
               <h3 className="font-playfair font-bold text-base sm:text-lg text-stone-900 leading-tight">
                 Personal Soundtrack Studio
               </h3>
               <p className="text-xs text-stone-500 mt-0.5">
-                Upload custom audio or choose a curated melody that accompanies the recipient.
+                Upload audio, link any YouTube song, or select a curated melody that accompanies the recipient.
               </p>
             </div>
           </div>
@@ -923,24 +1030,36 @@ const VoiceNoteEditor: React.FC<{
           </span>
         </div>
 
-        {/* Sub-Tabs: Upload File / Soundtrack Presets / Dedication Note */}
-        <div className="flex items-center gap-1.5 p-1.5 bg-stone-100/80 rounded-2xl border border-stone-200/80 mt-4 text-xs font-semibold">
+        {/* Sub-Tabs: Upload File / YouTube Song / Soundtrack Presets / Dedication Note */}
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-1.5 p-1.5 bg-stone-100/80 rounded-2xl border border-stone-200/80 mt-4 text-xs font-semibold">
           <button
             type="button"
             onClick={() => setActiveSubTab('upload')}
-            className={`flex-1 py-2 rounded-xl transition cursor-pointer flex items-center justify-center gap-1.5 ${
+            className={`py-2 rounded-xl transition cursor-pointer flex items-center justify-center gap-1.5 ${
               activeSubTab === 'upload'
                 ? 'bg-white text-stone-900 shadow-xs border border-stone-200 font-bold'
                 : 'text-stone-600 hover:text-stone-900'
             }`}
           >
             <Upload className="w-3.5 h-3.5" />
-            <span>Upload Audio</span>
+            <span>Upload File</span>
+          </button>
+          <button
+            type="button"
+            onClick={() => setActiveSubTab('youtube')}
+            className={`py-2 rounded-xl transition cursor-pointer flex items-center justify-center gap-1.5 ${
+              activeSubTab === 'youtube'
+                ? 'bg-red-600 text-white shadow-xs font-bold'
+                : 'text-stone-600 hover:text-red-700'
+            }`}
+          >
+            <Youtube className="w-3.5 h-3.5 text-red-500 group-hover:text-red-600" />
+            <span>YouTube Song</span>
           </button>
           <button
             type="button"
             onClick={() => setActiveSubTab('presets')}
-            className={`flex-1 py-2 rounded-xl transition cursor-pointer flex items-center justify-center gap-1.5 ${
+            className={`py-2 rounded-xl transition cursor-pointer flex items-center justify-center gap-1.5 ${
               activeSubTab === 'presets'
                 ? 'bg-white text-stone-900 shadow-xs border border-stone-200 font-bold'
                 : 'text-stone-600 hover:text-stone-900'
@@ -952,14 +1071,14 @@ const VoiceNoteEditor: React.FC<{
           <button
             type="button"
             onClick={() => setActiveSubTab('dedication')}
-            className={`flex-1 py-2 rounded-xl transition cursor-pointer flex items-center justify-center gap-1.5 ${
+            className={`py-2 rounded-xl transition cursor-pointer flex items-center justify-center gap-1.5 ${
               activeSubTab === 'dedication'
                 ? 'bg-white text-stone-900 shadow-xs border border-stone-200 font-bold'
                 : 'text-stone-600 hover:text-stone-900'
             }`}
           >
             <Heart className="w-3.5 h-3.5" />
-            <span>Dedication & Details</span>
+            <span>Dedication</span>
           </button>
         </div>
 
@@ -1021,7 +1140,7 @@ const VoiceNoteEditor: React.FC<{
                   </div>
                   <div>
                     <h4 className="text-sm font-bold text-stone-900">
-                      {hasAudio ? 'Replace Current Soundtrack' : 'Drop your audio file here'}
+                      {hasAudio && !isCurrentlyYouTube ? 'Replace Current Soundtrack' : 'Drop your audio file here'}
                     </h4>
                     <p className="text-xs text-stone-500 mt-0.5">
                       Supports MP3, WAV, M4A, AAC, and OGG up to 50MB
@@ -1046,8 +1165,8 @@ const VoiceNoteEditor: React.FC<{
               )}
             </div>
 
-            {/* Active Audio Card Preview */}
-            {hasAudio && (
+            {/* Active Audio Card Preview (Non-YouTube) */}
+            {hasAudio && !isCurrentlyYouTube && (
               <div className="p-4 rounded-2xl bg-white border border-amber-200 shadow-sm space-y-3">
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-2.5">
@@ -1092,7 +1211,193 @@ const VoiceNoteEditor: React.FC<{
           </div>
         )}
 
-        {/* Tab 2: Curated Presets Library */}
+        {/* Tab 2: YouTube Song Import & Background Player */}
+        {activeSubTab === 'youtube' && (
+          <div className="space-y-4 mt-5">
+            <div className="p-4 sm:p-5 rounded-2xl bg-white border-2 border-red-100 shadow-sm space-y-4">
+              <div className="flex items-center justify-between gap-2">
+                <div className="flex items-center gap-2">
+                  <div className="w-8 h-8 rounded-xl bg-red-100 text-red-600 flex items-center justify-center shadow-2xs">
+                    <Youtube className="w-5 h-5" />
+                  </div>
+                  <div>
+                    <h4 className="text-xs sm:text-sm font-bold text-stone-900">
+                      YouTube Soundtrack & Music
+                    </h4>
+                    <p className="text-[11px] text-stone-500">
+                      Paste any YouTube link to use it as background music for this birthday story.
+                    </p>
+                  </div>
+                </div>
+
+                <span className="hidden sm:inline-flex items-center gap-1 text-[10px] font-bold text-red-700 bg-red-50 border border-red-200 px-2.5 py-1 rounded-full">
+                  <span className="w-1.5 h-1.5 rounded-full bg-red-600 animate-pulse" />
+                  Streams in Background
+                </span>
+              </div>
+
+              {/* YouTube URL Input with Quick Actions */}
+              <div className="space-y-2">
+                <div className="flex flex-col sm:flex-row gap-2">
+                  <div className="relative flex-1">
+                    <input
+                      type="text"
+                      value={youtubeInput}
+                      onChange={(e) => {
+                        setYoutubeInput(e.target.value);
+                        setYtError('');
+                      }}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter') {
+                          e.preventDefault();
+                          handleApplyYouTubeUrl(youtubeInput);
+                        }
+                      }}
+                      placeholder="Paste YouTube Link (e.g. https://www.youtube.com/watch?v=... or https://youtu.be/...)"
+                      className="w-full px-3.5 py-2.5 rounded-xl border border-stone-300 text-xs text-stone-900 placeholder:text-stone-400 bg-stone-50/50 focus:bg-white focus:ring-2 focus:ring-red-500 focus:outline-none transition"
+                    />
+                    {youtubeInput && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setYoutubeInput('');
+                          setYtError('');
+                        }}
+                        className="absolute right-2.5 top-1/2 -translate-y-1/2 text-stone-400 hover:text-stone-600 text-xs px-1.5 py-0.5"
+                      >
+                        ✕
+                      </button>
+                    )}
+                  </div>
+
+                  <button
+                    type="button"
+                    disabled={ytLoading || !youtubeInput.trim()}
+                    onClick={() => handleApplyYouTubeUrl(youtubeInput)}
+                    className="px-5 py-2.5 rounded-xl bg-gradient-to-r from-red-600 to-rose-600 hover:from-red-700 hover:to-rose-700 disabled:opacity-50 text-white text-xs font-bold shadow-md cursor-pointer transition flex items-center justify-center gap-1.5 flex-shrink-0"
+                  >
+                    {ytLoading ? (
+                      <>
+                        <div className="w-3.5 h-3.5 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                        <span>Loading Track...</span>
+                      </>
+                    ) : (
+                      <>
+                        <CheckCircle2 className="w-3.5 h-3.5" />
+                        <span>Set as Soundtrack</span>
+                      </>
+                    )}
+                  </button>
+                </div>
+
+                {ytError && (
+                  <div className="p-3 bg-rose-50 border border-rose-200 rounded-xl text-xs text-rose-700 flex items-start gap-2 text-left">
+                    <AlertCircle className="w-4 h-4 flex-shrink-0 mt-0.5" />
+                    <span>{ytError}</span>
+                  </div>
+                )}
+              </div>
+
+              {/* Active YouTube Soundtrack Card Preview */}
+              {(isCurrentlyYouTube || ytPreviewMeta) && (
+                <div className="p-4 rounded-2xl bg-gradient-to-br from-red-50/60 via-stone-50 to-amber-50/40 border border-red-200 shadow-sm space-y-3">
+                  <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
+                    <div className="flex items-center gap-3 min-w-0">
+                      <div className="relative w-16 h-12 rounded-xl overflow-hidden bg-stone-900 flex-shrink-0 shadow-xs border border-stone-200">
+                        <img
+                          src={ytPreviewMeta?.thumbnailUrl || getYouTubeThumbnail(currentYtId || '', 'hq')}
+                          alt="YouTube Soundtrack Cover"
+                          className="w-full h-full object-cover"
+                        />
+                        <div className="absolute inset-0 bg-black/30 flex items-center justify-center">
+                          <Youtube className="w-5 h-5 text-red-500 fill-white drop-shadow" />
+                        </div>
+                      </div>
+
+                      <div className="min-w-0">
+                        <div className="flex items-center gap-1.5">
+                          <span className="text-[10px] font-bold text-red-700 bg-red-100/90 px-2 py-0.5 rounded-md">
+                            Active YouTube Song
+                          </span>
+                        </div>
+                        <h4 className="text-xs sm:text-sm font-bold text-stone-900 truncate mt-0.5">
+                          {content.title || ytPreviewMeta?.title || 'YouTube Birthday Soundtrack'}
+                        </h4>
+                        <p className="text-[11px] text-stone-500 truncate">
+                          {content.senderName || ytPreviewMeta?.authorName || 'YouTube Music'}
+                        </p>
+                      </div>
+                    </div>
+
+                    <div className="flex items-center gap-2 self-end sm:self-auto flex-shrink-0">
+                      <button
+                        type="button"
+                        onClick={handleClearYouTube}
+                        className="px-3 py-1.5 rounded-xl bg-stone-200/80 hover:bg-stone-300 text-stone-700 text-xs font-semibold cursor-pointer transition"
+                      >
+                        Remove
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Embedded Player for in-builder checking */}
+                  {currentYtId && (
+                    <div className="pt-2 border-t border-red-100">
+                      <div className="aspect-video w-full max-w-md mx-auto rounded-xl overflow-hidden shadow-xs border border-stone-200 bg-black">
+                        <iframe
+                          src={`https://www.youtube.com/embed/${currentYtId}?enablejsapi=1&origin=${typeof window !== 'undefined' ? window.location.origin : ''}`}
+                          title="YouTube Soundtrack Preview"
+                          className="w-full h-full"
+                          allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+                          allowFullScreen
+                        />
+                      </div>
+                    </div>
+                  )}
+
+                  <p className="text-[10px] text-emerald-700 font-semibold flex items-center gap-1 pt-1">
+                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse inline-block" />
+                    This YouTube song will automatically play in background as recipient explores their birthday gift!
+                  </p>
+                </div>
+              )}
+
+              {/* Quick Preset YouTube Soundtrack Ideas */}
+              <div className="pt-3 border-t border-stone-100 space-y-2">
+                <span className="text-[11px] font-bold text-stone-600 block">
+                  ✨ Or choose popular celebration tracks (1-Click Add):
+                </span>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                  {YOUTUBE_SUGGESTIONS.map((item, idx) => (
+                    <button
+                      key={idx}
+                      type="button"
+                      onClick={() => {
+                        setYoutubeInput(item.url);
+                        handleApplyYouTubeUrl(item.url);
+                      }}
+                      className="p-2.5 rounded-xl border border-stone-200 bg-stone-50/70 hover:bg-red-50/60 hover:border-red-300 text-left transition cursor-pointer flex items-center justify-between gap-2 group"
+                    >
+                      <div className="min-w-0">
+                        <span className="text-xs font-bold text-stone-800 group-hover:text-red-900 block truncate">
+                          {item.title}
+                        </span>
+                        <span className="text-[10px] text-stone-400 font-medium">
+                          {item.tag}
+                        </span>
+                      </div>
+                      <span className="text-[10px] font-bold text-red-600 bg-red-50 group-hover:bg-red-600 group-hover:text-white px-2 py-1 rounded-lg transition flex-shrink-0">
+                        + Use Song
+                      </span>
+                    </button>
+                  ))}
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Tab 3: Curated Presets Library */}
         {activeSubTab === 'presets' && (
           <div className="space-y-3 mt-5">
             <p className="text-xs text-stone-500">
@@ -1101,7 +1406,7 @@ const VoiceNoteEditor: React.FC<{
 
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
               {SOUNDTRACK_PRESETS.map((p) => {
-                const isSelected = content.audioUrl === p.url;
+                const isSelected = content.audioUrl === p.url && !isCurrentlyYouTube;
                 return (
                   <div
                     key={p.id}
@@ -1127,6 +1432,9 @@ const VoiceNoteEditor: React.FC<{
                         type="button"
                         onClick={() => {
                           updateField('audioUrl', p.url);
+                          updateField('youtubeUrl', '');
+                          updateField('youtubeId', '');
+                          updateField('sourceType', 'preset');
                           updateField('title', p.title);
                           updateField('durationSeconds', p.duration);
                           updateField('playAsBackground', true);
@@ -1147,7 +1455,7 @@ const VoiceNoteEditor: React.FC<{
           </div>
         )}
 
-        {/* Tab 3: Dedication & Song Details */}
+        {/* Tab 4: Dedication & Song Details */}
         {activeSubTab === 'dedication' && (
           <div className="space-y-4 mt-5">
             <div>

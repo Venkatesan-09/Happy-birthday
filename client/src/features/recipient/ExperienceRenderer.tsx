@@ -22,6 +22,8 @@ import {
   Music2,
   Disc3,
   Sliders,
+  Youtube,
+  ExternalLink,
 } from 'lucide-react';
 import { Experience, ExperienceModule } from '../../types';
 import { SoundEffects } from '../../utils/audioEngine';
@@ -30,6 +32,7 @@ import { MiniGames } from '../games/MiniGames';
 import { InteractiveUniverse } from '../universe/InteractiveUniverse';
 import { getMediaUrl } from '../../utils/mediaUrl';
 import { CelebrationEffects } from '../../components/CelebrationEffects';
+import { extractYouTubeId, loadYouTubeIFrameAPI, getYouTubeThumbnail } from '../../utils/youtube';
 
 interface ExperienceRendererProps {
   experience: Experience;
@@ -51,37 +54,69 @@ export const ExperienceRenderer: React.FC<ExperienceRendererProps> = ({
   const [audioLoadError, setAudioLoadError] = useState<string | null>(null);
   const modules = experience.modules || [];
 
-  // Resolve background MP3 audio URL: from experience.settings.backgroundMusicUrl OR from MUSIC (Soundtrack/Voice Note) OR VOICE module
+  // Resolve background audio: from experience.settings.backgroundMusicUrl OR from MUSIC (Soundtrack/Voice Note) OR VOICE module
   const audioNoteModule = modules.find(
     (m) =>
       (m.type === 'MUSIC' || m.type === 'VOICE' || (m.type as any) === 'voice') &&
       m.enabled !== false &&
-      !!(m.content as any)?.audioUrl &&
-      String((m.content as any)?.audioUrl).trim().length > 0
+      !!(
+        (m.content as any)?.audioUrl ||
+        (m.content as any)?.youtubeUrl ||
+        (m.content as any)?.youtubeId
+      ) &&
+      String((m.content as any)?.audioUrl || (m.content as any)?.youtubeUrl || (m.content as any)?.youtubeId).trim().length > 0
   );
 
-  // Always treat uploaded audio as background if playAsBackground is not explicitly false
+  // Always treat uploaded audio/YouTube as background if playAsBackground is not explicitly false
   const audioModuleUrl = audioNoteModule
     ? ((audioNoteModule.content as any)?.playAsBackground !== false
-        ? (audioNoteModule.content as any)?.audioUrl
+        ? ((audioNoteModule.content as any)?.youtubeUrl || (audioNoteModule.content as any)?.audioUrl)
         : null)
     : null;
 
   const rawBgAudio =
     (experience.settings as any)?.backgroundMusicUrl ||
     audioModuleUrl;
-  const backgroundAudioUrl = rawBgAudio && typeof rawBgAudio === 'string' && rawBgAudio.trim().length > 0 ? getMediaUrl(rawBgAudio.trim()) : null;
+
+  const youTubeVideoId =
+    (experience.settings as any)?.backgroundMusicYoutubeId ||
+    extractYouTubeId(rawBgAudio || '') ||
+    (audioNoteModule?.content as any)?.youtubeId ||
+    extractYouTubeId((audioNoteModule?.content as any)?.youtubeUrl) ||
+    extractYouTubeId((audioNoteModule?.content as any)?.audioUrl);
+  const isYouTubeTrack = !!youTubeVideoId;
+
+  const backgroundAudioUrl = !isYouTubeTrack && rawBgAudio && typeof rawBgAudio === 'string' && rawBgAudio.trim().length > 0
+    ? getMediaUrl(rawBgAudio.trim())
+    : null;
 
   const bgTrackTitle =
     (experience.settings as any)?.backgroundMusicTitle ||
     (audioNoteModule?.content as any)?.title ||
-    'Personal Soundtrack';
+    (isYouTubeTrack ? 'YouTube Soundtrack' : 'Personal Soundtrack');
 
   const bgAudioRef = React.useRef<HTMLAudioElement | null>(null);
+  const ytPlayerRef = React.useRef<any>(null);
+  const isYtReadyRef = React.useRef<boolean>(false);
+  const shouldPlayRef = React.useRef<boolean>(false);
+  const userInteractedRef = React.useRef<boolean>(false);
 
   const startBackgroundAudio = () => {
     if (isAudioMuted) return;
     setAudioLoadError(null);
+
+    if (isYouTubeTrack && youTubeVideoId) {
+      shouldPlayRef.current = true;
+      if (ytPlayerRef.current && typeof ytPlayerRef.current.playVideo === 'function') {
+        try {
+          ytPlayerRef.current.playVideo();
+          setIsPlayingAudio(true);
+        } catch (err) {
+          console.warn('[DearYou YT Audio] Error playing video:', err);
+        }
+      }
+      return;
+    }
 
     if (backgroundAudioUrl) {
       if (!bgAudioRef.current) {
@@ -122,6 +157,14 @@ export const ExperienceRenderer: React.FC<ExperienceRendererProps> = ({
   };
 
   const stopBackgroundAudio = () => {
+    if (isYouTubeTrack) {
+      shouldPlayRef.current = false;
+      if (ytPlayerRef.current && typeof ytPlayerRef.current.pauseVideo === 'function') {
+        try {
+          ytPlayerRef.current.pauseVideo();
+        } catch (e) {}
+      }
+    }
     if (bgAudioRef.current) {
       bgAudioRef.current.pause();
     }
@@ -140,6 +183,17 @@ export const ExperienceRenderer: React.FC<ExperienceRendererProps> = ({
   const toggleMute = () => {
     const nextMuted = !isAudioMuted;
     setIsAudioMuted(nextMuted);
+
+    if (isYouTubeTrack && ytPlayerRef.current) {
+      try {
+        if (nextMuted) {
+          ytPlayerRef.current.mute?.();
+        } else {
+          ytPlayerRef.current.unMute?.();
+        }
+      } catch (e) {}
+    }
+
     if (bgAudioRef.current) {
       bgAudioRef.current.muted = nextMuted;
     }
@@ -147,15 +201,32 @@ export const ExperienceRenderer: React.FC<ExperienceRendererProps> = ({
     if (nextMuted) {
       setIsPlayingAudio(false);
     } else {
-      if (bgAudioRef.current && bgAudioRef.current.paused) {
+      if (isYouTubeTrack && ytPlayerRef.current && typeof ytPlayerRef.current.playVideo === 'function') {
+        ytPlayerRef.current.playVideo();
+        setIsPlayingAudio(true);
+      } else if (bgAudioRef.current && bgAudioRef.current.paused) {
         bgAudioRef.current.play().catch(() => {});
+        setIsPlayingAudio(true);
       }
-      setIsPlayingAudio(true);
     }
   };
 
   const handleVolumeChange = (vol: number) => {
     setAudioVolume(vol);
+
+    if (isYouTubeTrack && ytPlayerRef.current) {
+      try {
+        ytPlayerRef.current.setVolume?.(vol * 100);
+        if (vol === 0) {
+          ytPlayerRef.current.mute?.();
+          setIsAudioMuted(true);
+        } else if (isAudioMuted) {
+          ytPlayerRef.current.unMute?.();
+          setIsAudioMuted(false);
+        }
+      } catch (e) {}
+    }
+
     if (bgAudioRef.current) {
       bgAudioRef.current.volume = vol;
       if (vol === 0) {
@@ -168,15 +239,115 @@ export const ExperienceRenderer: React.FC<ExperienceRendererProps> = ({
     }
   };
 
-  // Ensure audio instance stays updated with current backgroundAudioUrl
+  // YouTube IFrame Player Background Audio lifecycle
+  React.useEffect(() => {
+    if (!isYouTubeTrack || !youTubeVideoId) return;
+
+    let isMounted = true;
+    const containerId = `dearyou-yt-bg-${experience.id || 'main'}`;
+
+    loadYouTubeIFrameAPI().then(() => {
+      if (!isMounted) return;
+
+      const element = document.getElementById(containerId);
+      if (!element) return;
+
+      try {
+        if (ytPlayerRef.current?.destroy) {
+          ytPlayerRef.current.destroy();
+          ytPlayerRef.current = null;
+        }
+
+        const player = new (window as any).YT.Player(containerId, {
+          height: '1',
+          width: '1',
+          videoId: youTubeVideoId,
+          playerVars: {
+            autoplay: 0,
+            controls: 0,
+            disablekb: 1,
+            enablejsapi: 1,
+            fs: 0,
+            loop: 1,
+            playlist: youTubeVideoId,
+            modestbranding: 1,
+            playsinline: 1,
+            rel: 0,
+            origin: typeof window !== 'undefined' ? window.location.origin : '',
+          },
+          events: {
+            onReady: (event: any) => {
+              if (!isMounted) return;
+              isYtReadyRef.current = true;
+              ytPlayerRef.current = event.target;
+              event.target.setVolume(audioVolume * 100);
+              if (isAudioMuted) {
+                event.target.mute();
+              } else {
+                event.target.unMute();
+              }
+              if (shouldPlayRef.current || userInteractedRef.current) {
+                event.target.playVideo();
+              }
+            },
+            onStateChange: (event: any) => {
+              if (!isMounted) return;
+              // 1 = PLAYING, 2 = PAUSED, 0 = ENDED
+              if (event.data === 1) {
+                setIsPlayingAudio(true);
+                setAudioLoadError(null);
+              } else if (event.data === 2) {
+                setIsPlayingAudio(false);
+              } else if (event.data === 0) {
+                event.target.playVideo();
+              }
+            },
+            onError: (e: any) => {
+              console.warn('[DearYou YT Audio] Error with YouTube stream:', e);
+              setAudioLoadError('YouTube background audio preview fallback');
+              SoundEffects.startAmbientTrack();
+              setIsPlayingAudio(true);
+            },
+          },
+        });
+      } catch (err) {
+        console.warn('[DearYou YT Audio] Failed to instantiate YouTube player:', err);
+      }
+    });
+
+    const handleFirstInteraction = () => {
+      userInteractedRef.current = true;
+      if (ytPlayerRef.current && typeof ytPlayerRef.current.playVideo === 'function' && !isAudioMuted) {
+        ytPlayerRef.current.playVideo();
+      } else {
+        shouldPlayRef.current = true;
+      }
+    };
+
+    const events = ['click', 'touchstart', 'pointerdown', 'keydown', 'scroll'];
+    events.forEach((ev) => window.addEventListener(ev, handleFirstInteraction, { once: true, passive: true }));
+
+    return () => {
+      isMounted = false;
+      events.forEach((ev) => window.removeEventListener(ev, handleFirstInteraction));
+      if (ytPlayerRef.current?.destroy) {
+        try {
+          ytPlayerRef.current.destroy();
+        } catch (e) {}
+        ytPlayerRef.current = null;
+      }
+    };
+  }, [isYouTubeTrack, youTubeVideoId, experience.id]);
+
+  // Ensure audio instance stays updated with current backgroundAudioUrl (Non-YouTube)
   React.useEffect(() => {
     if (bgAudioRef.current) {
       bgAudioRef.current.pause();
       bgAudioRef.current = null;
     }
 
-    if (!backgroundAudioUrl) {
-      setIsPlayingAudio(false);
+    if (!backgroundAudioUrl || isYouTubeTrack) {
+      if (!isYouTubeTrack) setIsPlayingAudio(false);
       return;
     }
 
@@ -218,7 +389,7 @@ export const ExperienceRenderer: React.FC<ExperienceRendererProps> = ({
       }
       SoundEffects.stopAmbientTrack();
     };
-  }, [backgroundAudioUrl]);
+  }, [backgroundAudioUrl, isYouTubeTrack]);
 
   // Keep volume in sync if audio element re-instantiated
   React.useEffect(() => {
@@ -238,6 +409,25 @@ export const ExperienceRenderer: React.FC<ExperienceRendererProps> = ({
       {/* Background Celebration Elements: Crackers Blasting, Flowing Flowers & Hearts */}
       <CelebrationEffects initialMode="all" showControls={true} />
 
+      {/* Hidden YouTube Background Audio Container */}
+      {isYouTubeTrack && (
+        <div
+          aria-hidden="true"
+          style={{
+            position: 'fixed',
+            bottom: '-200px',
+            right: '-200px',
+            width: '1px',
+            height: '1px',
+            opacity: 0,
+            pointerEvents: 'none',
+            zIndex: -9999,
+          }}
+        >
+          <div id={`dearyou-yt-bg-${experience.id || 'main'}`} />
+        </div>
+      )}
+
       {/* Ultra-Modern Floating Ambient Soundtrack Player Bar */}
       <div className="fixed top-3 right-3 sm:top-4 sm:right-4 z-40 flex items-center gap-1.5 sm:gap-2 bg-white/95 backdrop-blur-md px-3 sm:px-4 py-2 rounded-full border border-amber-300/80 shadow-lg shadow-amber-950/5">
         <button
@@ -246,7 +436,9 @@ export const ExperienceRenderer: React.FC<ExperienceRendererProps> = ({
           title={isPlayingAudio ? 'Pause background soundtrack' : 'Play background soundtrack'}
         >
           <div className={`w-6 h-6 rounded-full flex items-center justify-center transition-transform ${
-            isPlayingAudio ? 'bg-amber-600 text-white shadow-xs scale-105' : 'bg-amber-100 text-amber-800'
+            isPlayingAudio
+              ? (isYouTubeTrack ? 'bg-red-600 text-white shadow-xs scale-105' : 'bg-amber-600 text-white shadow-xs scale-105')
+              : (isYouTubeTrack ? 'bg-red-100 text-red-700' : 'bg-amber-100 text-amber-800')
           }`}>
             {isPlayingAudio ? (
               <Pause className="w-3 h-3 fill-current" />
@@ -256,17 +448,18 @@ export const ExperienceRenderer: React.FC<ExperienceRendererProps> = ({
           </div>
           <div className="flex flex-col text-left">
             <span className="text-[11px] font-bold leading-tight flex items-center gap-1.5 text-stone-800">
+              {isYouTubeTrack && <Youtube className="w-3 h-3 text-red-600 flex-shrink-0" />}
               <span className="truncate max-w-[110px] sm:max-w-[150px]">{bgTrackTitle}</span>
               {isPlayingAudio && (
                 <span className="flex items-center gap-0.5 h-2.5">
-                  <span className="w-0.5 h-2.5 bg-amber-600 rounded-full animate-pulse" />
-                  <span className="w-0.5 h-1.5 bg-amber-500 rounded-full animate-pulse delay-75" />
-                  <span className="w-0.5 h-2 bg-amber-600 rounded-full animate-pulse delay-150" />
+                  <span className={`w-0.5 h-2.5 ${isYouTubeTrack ? 'bg-red-600' : 'bg-amber-600'} rounded-full animate-pulse`} />
+                  <span className={`w-0.5 h-1.5 ${isYouTubeTrack ? 'bg-red-500' : 'bg-amber-500'} rounded-full animate-pulse delay-75`} />
+                  <span className={`w-0.5 h-2 ${isYouTubeTrack ? 'bg-red-600' : 'bg-amber-600'} rounded-full animate-pulse delay-150`} />
                 </span>
               )}
             </span>
             <span className="text-[9px] text-stone-500 font-normal">
-              {isPlayingAudio ? 'Playing in background' : 'Soundtrack paused'}
+              {isPlayingAudio ? (isYouTubeTrack ? 'Streaming YouTube soundtrack' : 'Playing in background') : 'Soundtrack paused'}
             </span>
           </div>
         </button>
@@ -633,7 +826,19 @@ const MusicModule: React.FC<{
   const [isSeeking, setIsSeeking] = React.useState(false);
   const audioRef = React.useRef<HTMLAudioElement | null>(null);
 
-  const hasCustomAudio = !!(content.audioUrl && String(content.audioUrl).trim());
+  const isYouTube = !!(
+    content.sourceType === 'youtube' ||
+    content.youtubeId ||
+    extractYouTubeId(content.youtubeUrl) ||
+    extractYouTubeId(content.audioUrl)
+  );
+  const youTubeId =
+    content.youtubeId ||
+    extractYouTubeId(content.youtubeUrl) ||
+    extractYouTubeId(content.audioUrl);
+  const youTubeCover = youTubeId ? getYouTubeThumbnail(youTubeId, 'hq') : null;
+
+  const hasCustomAudio = !!(content.audioUrl && String(content.audioUrl).trim()) || isYouTube;
   const playsInBackground = content.playAsBackground !== false;
 
   // Sync state if background player is driving
@@ -641,7 +846,7 @@ const MusicModule: React.FC<{
     ? isBackgroundPlaying
     : localPlaying;
 
-  const resolvedAudioUrl = hasCustomAudio ? getMediaUrl(String(content.audioUrl).trim()) : null;
+  const resolvedAudioUrl = !isYouTube && hasCustomAudio ? getMediaUrl(String(content.audioUrl).trim()) : null;
 
   const formatTime = (secs: number) => {
     if (!secs || isNaN(secs)) return '0:00';
@@ -650,9 +855,9 @@ const MusicModule: React.FC<{
     return `${m}:${s < 10 ? '0' : ''}${s}`;
   };
 
-  // Local audio management (use React.useEffect to avoid bundler scope issues)
+  // Local audio management for direct files (Non-YouTube)
   React.useEffect(() => {
-    if (!resolvedAudioUrl) return;
+    if (!resolvedAudioUrl || isYouTube) return;
 
     // Reset and recreate audio when URL changes
     if (audioRef.current) {
@@ -684,15 +889,15 @@ const MusicModule: React.FC<{
       audio.onended = null;
       audioRef.current = null;
     };
-  }, [resolvedAudioUrl]);
+  }, [resolvedAudioUrl, isYouTube]);
 
   const toggle = () => {
-    if (onToggleBackground && hasCustomAudio && playsInBackground) {
+    if (onToggleBackground) {
       onToggleBackground();
       return;
     }
 
-    if (hasCustomAudio && audioRef.current) {
+    if (!isYouTube && hasCustomAudio && audioRef.current) {
       if (localPlaying) {
         audioRef.current.pause();
         setLocalPlaying(false);
@@ -720,19 +925,19 @@ const MusicModule: React.FC<{
   return (
     <div className="relative overflow-hidden rounded-3xl bg-[#fffdfa] border-2 border-amber-200/90 shadow-xl shadow-amber-950/5 transition-all">
       {/* Decorative Warm Ambient Glows */}
-      <div className="absolute -top-16 -right-16 w-56 h-56 rounded-full bg-gradient-to-br from-amber-200/40 to-rose-200/30 blur-3xl pointer-events-none" />
+      <div className={`absolute -top-16 -right-16 w-56 h-56 rounded-full ${isYouTube ? 'bg-gradient-to-br from-red-200/40 to-rose-200/30' : 'bg-gradient-to-br from-amber-200/40 to-rose-200/30'} blur-3xl pointer-events-none`} />
       <div className="absolute -bottom-12 -left-12 w-48 h-48 rounded-full bg-gradient-to-tr from-orange-200/30 to-amber-100/40 blur-2xl pointer-events-none" />
 
       <div className="relative p-6 sm:p-8 space-y-6">
         {/* Top Header Badge */}
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2">
-            <span className="w-8 h-8 rounded-xl bg-amber-100 text-amber-900 flex items-center justify-center shadow-xs">
-              <Music2 className="w-4 h-4" />
+            <span className={`w-8 h-8 rounded-xl ${isYouTube ? 'bg-red-100 text-red-600' : 'bg-amber-100 text-amber-900'} flex items-center justify-center shadow-xs`}>
+              {isYouTube ? <Youtube className="w-4 h-4" /> : <Music2 className="w-4 h-4" />}
             </span>
             <div>
-              <span className="text-[10px] font-extrabold uppercase tracking-widest text-amber-800">
-                Personal Soundtrack
+              <span className={`text-[10px] font-extrabold uppercase tracking-widest ${isYouTube ? 'text-red-700' : 'text-amber-800'}`}>
+                {isYouTube ? 'YouTube Soundtrack' : 'Personal Soundtrack'}
               </span>
               <p className="text-xs text-stone-500">
                 {content.senderName ? `Dedicated by ${content.senderName}` : 'Curated Birthday Melody'}
@@ -741,14 +946,19 @@ const MusicModule: React.FC<{
           </div>
 
           <div className="flex items-center gap-1.5">
-            {playsInBackground && (
+            {isYouTube ? (
+              <span className="inline-flex items-center gap-1 text-[10px] font-bold text-red-700 bg-red-50 border border-red-200 px-2.5 py-1 rounded-full">
+                <Youtube className="w-3 h-3 text-red-600" />
+                <span>YouTube Audio</span>
+              </span>
+            ) : playsInBackground && (
               <span className="hidden sm:inline-flex items-center gap-1 text-[10px] font-bold text-emerald-800 bg-emerald-50 border border-emerald-200 px-2.5 py-1 rounded-full">
                 <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
                 Background Ambient
               </span>
             )}
             {isPlaying && (
-              <span className="inline-flex items-center gap-1 text-[11px] font-bold text-amber-900 bg-amber-100/90 border border-amber-200 px-2.5 py-1 rounded-full animate-pulse">
+              <span className={`inline-flex items-center gap-1 text-[11px] font-bold ${isYouTube ? 'text-red-700 bg-red-100/90 border-red-200' : 'text-amber-900 bg-amber-100/90 border-amber-200'} border px-2.5 py-1 rounded-full animate-pulse`}>
                 ♪ Playing
               </span>
             )}
@@ -757,7 +967,7 @@ const MusicModule: React.FC<{
 
         {/* Center Vinyl & Track Info Deck */}
         <div className="flex flex-col sm:flex-row items-center gap-6 pt-2">
-          {/* Animated Spinning Vinyl Graphic */}
+          {/* Animated Spinning Vinyl Graphic with Cover Image */}
           <div className="relative flex-shrink-0">
             <motion.div
               animate={isPlaying ? { rotate: 360 } : { rotate: 0 }}
@@ -777,15 +987,26 @@ const MusicModule: React.FC<{
               <div className="absolute inset-6 rounded-full border border-stone-700/20 opacity-50" />
               <div className="absolute inset-8 rounded-full border border-stone-700/30 opacity-60" />
 
-              {/* Center Record Label */}
-              <div className="w-11 h-11 rounded-full bg-gradient-to-tr from-amber-500 via-rose-500 to-amber-600 flex items-center justify-center shadow-inner border border-white/20">
-                <div className="w-3 h-3 rounded-full bg-stone-950 border border-stone-800" />
-              </div>
+              {/* Center Record Label / YouTube Cover */}
+              {youTubeCover ? (
+                <div className="w-12 h-12 rounded-full overflow-hidden border-2 border-white/40 shadow-inner relative flex items-center justify-center bg-stone-900">
+                  <img
+                    src={youTubeCover}
+                    alt="Track Cover"
+                    className="w-full h-full object-cover"
+                  />
+                  <div className="w-3 h-3 rounded-full bg-stone-950/80 border border-white/30 absolute" />
+                </div>
+              ) : (
+                <div className="w-11 h-11 rounded-full bg-gradient-to-tr from-amber-500 via-rose-500 to-amber-600 flex items-center justify-center shadow-inner border border-white/20">
+                  <div className="w-3 h-3 rounded-full bg-stone-950 border border-stone-800" />
+                </div>
+              )}
             </motion.div>
 
             {/* Tonearm / Play indicator pill */}
             <div className="absolute -bottom-1 -right-1 bg-white p-1 rounded-full shadow-md border border-amber-200">
-              <span className={`w-3 h-3 rounded-full block ${isPlaying ? 'bg-emerald-500 animate-ping' : 'bg-stone-300'}`} />
+              <span className={`w-3 h-3 rounded-full block ${isPlaying ? (isYouTube ? 'bg-red-500 animate-ping' : 'bg-emerald-500 animate-ping') : 'bg-stone-300'}`} />
             </div>
           </div>
 
@@ -801,14 +1022,14 @@ const MusicModule: React.FC<{
             </div>
 
             {/* Play Button Row */}
-            <div className="flex items-center justify-center sm:justify-start gap-3 pt-1">
+            <div className="flex flex-wrap items-center justify-center sm:justify-start gap-3 pt-1">
               <button
                 type="button"
                 onClick={toggle}
                 className={`px-6 py-3 rounded-full flex items-center gap-2.5 font-bold text-sm shadow-md transition-all duration-200 cursor-pointer transform hover:-translate-y-0.5 active:translate-y-0 ${
                   isPlaying
-                    ? 'bg-amber-800 hover:bg-amber-900 text-white shadow-amber-900/20'
-                    : 'bg-gradient-to-r from-amber-600 to-rose-600 hover:from-amber-700 hover:to-rose-700 text-white shadow-rose-900/20'
+                    ? (isYouTube ? 'bg-red-700 hover:bg-red-800 text-white shadow-red-900/20' : 'bg-amber-800 hover:bg-amber-900 text-white shadow-amber-900/20')
+                    : (isYouTube ? 'bg-gradient-to-r from-red-600 to-rose-600 hover:from-red-700 hover:to-rose-700 text-white shadow-red-900/20' : 'bg-gradient-to-r from-amber-600 to-rose-600 hover:from-amber-700 hover:to-rose-700 text-white shadow-rose-900/20')
                 }`}
               >
                 {isPlaying ? (
@@ -823,6 +1044,19 @@ const MusicModule: React.FC<{
                   </>
                 )}
               </button>
+
+              {youTubeId && (
+                <a
+                  href={`https://www.youtube.com/watch?v=${youTubeId}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="px-4 py-2.5 rounded-full bg-red-50 hover:bg-red-100 text-red-700 border border-red-200 text-xs font-bold transition flex items-center gap-1.5 shadow-2xs"
+                >
+                  <Youtube className="w-3.5 h-3.5" />
+                  <span>Open on YouTube</span>
+                  <ExternalLink className="w-3 h-3 ml-0.5 opacity-70" />
+                </a>
+              )}
 
               {content.durationSeconds && (
                 <span className="text-xs font-semibold px-3 py-1.5 rounded-full bg-amber-50 text-amber-900 border border-amber-200">
