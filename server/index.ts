@@ -195,6 +195,64 @@ if (config.nodeEnv === 'production') {
 
   if (distDir) {
     app.use(express.static(distDir));
+
+    // --- OG tag injector for /r/:slug ---
+    // Must come BEFORE the catch-all so WhatsApp / Telegram bots get correct meta tags.
+    // When a real user browser hits this route it gets the same HTML with the correct
+    // og:url (full URL including the /r/<slug> path) so messengers show ONE clickable link.
+    app.get('/r/:slug', async (req: Request, res: Response, next) => {
+      try {
+        const { Experience } = await import('./models/Experience');
+        const slug = req.params.slug?.toLowerCase().trim();
+        const exp = await Experience.findOne({ slug }).lean();
+
+        const proto = req.headers['x-forwarded-proto'] || req.protocol || 'https';
+        const host = req.headers['x-forwarded-host'] || req.headers.host || '';
+        const fullUrl = `${proto}://${host}/r/${slug}`;
+
+        const recipientName = exp?.recipient?.name ? exp.recipient.name : 'Someone special';
+        const relationship = exp?.recipient?.relationship ? ` (${exp.recipient.relationship})` : '';
+
+        const ogTitle = exp
+          ? `🎂 Happy Birthday, ${recipientName}! — Your Birthday Surprise is here`
+          : '🎂 You have a Birthday Surprise!';
+        const ogDescription = exp
+          ? `${recipientName}${relationship} has a special interactive birthday experience waiting for them. Open to see the magic! 🎁`
+          : 'Someone made you a special interactive birthday experience. Open to see!';
+
+        const indexHtml = fs.readFileSync(path.join(distDir, 'index.html'), 'utf8');
+
+        // Inject / replace OG tags so the full URL is canonical
+        const injected = indexHtml
+          .replace(
+            /<title>[^<]*<\/title>/,
+            `<title>${ogTitle}</title>`
+          )
+          .replace(
+            /<meta\s+name="description"[^>]*>/,
+            `<meta name="description" content="${ogDescription}" />`
+          )
+          .replace(
+            /<meta\s+property="og:title"[^>]*>/,
+            `<meta property="og:title" content="${ogTitle}" />`
+          )
+          .replace(
+            /<meta\s+property="og:description"[^>]*>/,
+            `<meta property="og:description" content="${ogDescription}" />`
+          )
+          // Inject/update og:url — this is what fixes the split-link problem in WhatsApp
+          .replace(
+            /(<meta\s+property="og:type"[^>]*>)/,
+            `$1\n    <meta property="og:url" content="${fullUrl}" />`
+          );
+
+        res.setHeader('Content-Type', 'text/html; charset=utf-8');
+        res.send(injected);
+      } catch (err) {
+        next(err);
+      }
+    });
+
     app.get('*', (req: Request, res: Response, next) => {
       if (req.path.startsWith('/api') || req.path.startsWith('/uploads')) {
         return next();
