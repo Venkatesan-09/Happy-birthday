@@ -4,6 +4,10 @@ import { RecipientService } from '../services/recipient.service';
 export class RecipientController {
   static async getExperience(req: Request, res: Response, next: NextFunction) {
     try {
+      res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate, max-age=0');
+      res.setHeader('Pragma', 'no-cache');
+      res.setHeader('Expires', '0');
+
       const accessHeader = req.headers['x-experience-access'] as string | undefined;
       const experience = await RecipientService.getExperienceBySlug(
         req.params.slug,

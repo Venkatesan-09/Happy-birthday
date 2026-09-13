@@ -28,28 +28,49 @@ export const PublicRecipientView: React.FC<PublicRecipientViewProps> = ({
   const [thankYouSent, setThankYouSent] = useState(false);
   const [thankYouNote, setThankYouNote] = useState('');
 
-  const loadPublicExperience = async (pwd?: string) => {
-    setLoading(true);
+  const loadPublicExperience = async (pwd?: string, silent = false) => {
+    if (!silent) {
+      setLoading(true);
+    }
     setError(null);
     try {
       const data = await api.recipient.getBySlug(slug, pwd);
       setExperience(data);
       setPasswordNeeded(false);
       // Track view
-      api.recipient.trackInteraction(data._id, 'VIEW');
+      if (!silent) {
+        api.recipient.trackInteraction(data._id, 'VIEW');
+      }
     } catch (err: any) {
       if (err.message && err.message.includes('Password')) {
         setPasswordNeeded(true);
       } else {
-        setError('This birthday experience could not be found or has not been published yet.');
+        if (!silent) {
+          setError('This birthday experience could not be found or has not been published yet.');
+        }
       }
     } finally {
-      setLoading(false);
+      if (!silent) {
+        setLoading(false);
+      }
     }
   };
 
   useEffect(() => {
     loadPublicExperience();
+
+    // When the recipient or creator returns to this browser tab, fetch latest updates silently
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible') {
+        loadPublicExperience(undefined, true);
+      }
+    };
+    window.addEventListener('visibilitychange', handleVisibilityChange);
+    window.addEventListener('focus', () => loadPublicExperience(undefined, true));
+
+    return () => {
+      window.removeEventListener('visibilitychange', handleVisibilityChange);
+    };
   }, [slug]);
 
   const handlePasswordSubmit = async (e: React.FormEvent) => {

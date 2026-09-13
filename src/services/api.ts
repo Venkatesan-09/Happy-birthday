@@ -203,7 +203,11 @@ export const api = {
       if (accessCode) {
         headers['x-experience-access'] = accessCode;
       }
-      const res = await fetch(`${BASE_URL}/public/experiences/${slug}`, { headers });
+      const cacheBuster = `_t=${Date.now()}`;
+      const res = await fetch(`${BASE_URL}/public/experiences/${encodeURIComponent(slug)}?${cacheBuster}`, {
+        headers,
+        cache: 'no-store',
+      });
       return handleResponse<Experience & { requiresPassword?: boolean }>(res);
     },
     async verifyPassword(slug: string, password: string): Promise<{ token: string }> {
